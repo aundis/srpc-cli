@@ -16,7 +16,7 @@ type Ols struct {
 }
 
 func (o *Ols) Name() string      { return "ols" }
-func (o *Ols) Usage() string     { return "ols [target] [object]" }
+func (o *Ols) Usage() string     { return "[target]" }
 func (o *Ols) ShortHelp() string { return "object list" }
 func (o *Ols) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
@@ -26,7 +26,7 @@ func (o *Ols) DetailedHelp(f *flag.FlagSet) {
 // Run prints Version information to stdout.
 func (c *Ols) Run(ctx context.Context, args ...string) error {
 	if len(args) == 0 {
-		return errors.New("缺少参数")
+		return errors.New("missing argument target")
 	}
 	clinet, err := newSrpcClinet(ctx)
 	if err != nil {

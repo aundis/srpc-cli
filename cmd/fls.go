@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/aundis/mate"
 )
@@ -17,21 +18,25 @@ import (
 type Fls struct {
 }
 
-func (o *Fls) Name() string      { return "fls" }
-func (o *Fls) Usage() string     { return "" }
-func (o *Fls) ShortHelp() string { return "object function list" }
-func (o *Fls) DetailedHelp(f *flag.FlagSet) {
-	fmt.Fprint(f.Output(), ``)
-	f.PrintDefaults()
+func (f *Fls) Name() string      { return "fls" }
+func (f *Fls) Usage() string     { return "[target@object]" }
+func (f *Fls) ShortHelp() string { return "object function list" }
+func (f *Fls) DetailedHelp(fla *flag.FlagSet) {
+	fmt.Fprint(fla.Output(), ``)
+	fla.PrintDefaults()
 }
 
 // Run prints Version information to stdout.
 func (f *Fls) Run(ctx context.Context, args ...string) error {
-	if len(args) != 2 {
-		return errors.New("缺少参数")
+	if len(args) < 1 {
+		return errors.New("missing argument [target@object]")
 	}
-	target := args[0]
-	objectName := args[1]
+	arr := strings.Split(args[0], "@")
+	if len(arr) != 2 {
+		return errors.New("argument error, e.g. clinet@Person")
+	}
+	target := arr[0]
+	objectName := arr[1]
 	clinet, err := newSrpcClinet(ctx)
 	if err != nil {
 		return err

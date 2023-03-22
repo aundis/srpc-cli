@@ -123,7 +123,7 @@ func emitSlotDir(module string, inDir string, outDir string) ([]string, error) {
 			}
 			target := getListenTarget(st)
 			if len(target) == 0 {
-				return nil, formatError(st.Parent.FileSet, st.Pos, "未配置监听对象")
+				return nil, formatError(st.Parent.FileSet, st.Pos, "not set listen object")
 			}
 			targetStructs = append(targetStructs, st)
 		}
@@ -202,7 +202,7 @@ func resolveLocalTypeCode(pkgPath string, typeName string) (string, error) {
 	if modal.ContainsType(typeName) {
 		return string(modal.Types[typeName]), nil
 	}
-	return "", fmt.Errorf("package: %s, 找不到类型:%s", pkgPath, typeName)
+	return "", fmt.Errorf("package: %s, cannot found type: %s", pkgPath, typeName)
 }
 
 func convertPackagePathToLocalPath(pkgPath string) string {

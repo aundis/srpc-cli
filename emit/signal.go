@@ -80,10 +80,10 @@ func EmitSignal(root string) error {
 			name := getPackageName(expr)
 			imp := resolveImport(it.Parent, name)
 			if imp == nil {
-				return formatError(it.Parent.FileSet, field.Pos, "无法找到引用的模块"+name)
+				return formatError(it.Parent.FileSet, field.Pos, "cannot found refrence pacakge"+name)
 			}
 			if len(importMap[imp.Export]) > 0 && imp.Path != importMap[imp.Export] {
-				fmt.Printf("警告: 模块%s存在不同的导入路径 %s, %s\n", name, imp.Path, importMap[imp.Export])
+				fmt.Printf("warning: package %s exist different import path %s, %s\n", name, imp.Path, importMap[imp.Export])
 			}
 			importMap[imp.Export] = imp.Path
 		}

@@ -98,12 +98,12 @@ func resolveFieldMate(module string, file *parse.File, name, tpe string, pos tok
 			typeName := results[i][2]
 			imp := resolveImport(file, scope)
 			if imp == nil {
-				return nil, formatError(file.FileSet, pos, fmt.Sprintf("无法解析scope:%s, 本地类型请放置在model包下", scope))
+				return nil, formatError(file.FileSet, pos, fmt.Sprintf("cannot parse scope:%s, please place the local type under the model package", scope))
 			}
 			if isProjectPackage(module, imp.Path) {
 				// raw
 				if imp.Export != "model" {
-					fmt.Printf("警告: 类型%s.%s未放置在项目的modal包下, 代码生成可能会造成重名", scope, typeName)
+					fmt.Printf("warning: type %s.%s is not placed under the project's modal package, and code generation may cause duplicate names", scope, typeName)
 				}
 				// 提取本地类型的代码
 				code, err := resolveLocalTypeCode(imp.Path, typeName)

@@ -13,6 +13,7 @@ import (
 
 var commands = []Application{
 	&cmd.Gen{},
+	&cmd.Get{},
 	&cmd.Ols{},
 	&cmd.Fls{},
 }
@@ -42,13 +43,13 @@ func main() {
 }
 
 var usageTemplate = `
-使用方法:
-        sr <命令> [参数]
+Usage:
+        sr <command> [arguments]
 
-命令列表:{{range .}}
+The commands are:{{range .}}
 	{{.Name | printf "%-11s"}} {{.ShortHelp}}{{end}}
 
-使用 "sr <命令> -help" 可获取有关命令的更多信息。
+Use "sr <command> -help" for more information about a command.
 `
 
 // An errWriter wraps a writer, recording whether a write error occurred.

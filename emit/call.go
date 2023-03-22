@@ -216,10 +216,10 @@ func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, si
 			// 首参数校验
 			if i == 0 {
 				if p.Name != "ctx" {
-					return formatError(it.Parent.FileSet, p.Pos, "首个参数名称必须为ctx")
+					return formatError(it.Parent.FileSet, p.Pos, "first param name must is ctx")
 				}
 				if p.Type != "context.Context" {
-					return formatError(it.Parent.FileSet, p.Pos, "首个参数必须为context.Context")
+					return formatError(it.Parent.FileSet, p.Pos, "first param type must is context.Context")
 				}
 			}
 			if i != 0 {
@@ -239,17 +239,17 @@ func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, si
 		// 👉 写返回值
 		// 必须有返回值
 		if len(fun.Results) == 0 {
-			return formatError(it.Parent.FileSet, fun.Pos, "方法必须提供一个error类型的返回值")
+			return formatError(it.Parent.FileSet, fun.Pos, "method must provide a return value of type error")
 		}
 		if signal && len(fun.Results) > 1 {
-			return formatError(it.Parent.FileSet, fun.Pos, "signal方法只能有一个返回值")
+			return formatError(it.Parent.FileSet, fun.Pos, "signal method can only have one return value")
 		}
 		writer.WriteString(" (")
 		for i, r := range fun.Results {
 			// 校验最后一个返回类型
 			if i == len(fun.Results)-1 {
 				if r.Type != "error" {
-					return formatError(it.Parent.FileSet, fun.Pos, "方法返回值的最后一个类型必须为error")
+					return formatError(it.Parent.FileSet, fun.Pos, "method last return value must be error")
 				}
 			}
 			if i != 0 {
@@ -411,7 +411,7 @@ func getProjectModuleName(dir string) (string, error) {
 	firstLine = strings.ReplaceAll(firstLine, "module ", "")
 	firstLine = strings.TrimSpace(firstLine)
 	if len(firstLine) == 0 {
-		return "", errors.New("获取项目模块名称失败")
+		return "", errors.New("get project module name error")
 	}
 	return firstLine, nil
 }
