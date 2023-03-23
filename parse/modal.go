@@ -1,8 +1,12 @@
 package parse
 
-import "path"
+import (
+	"path"
 
-var globalModal = map[string]*Model{}
+	"github.com/gogf/gf/v2/os/gfile"
+)
+
+var globalModel = map[string]*Model{}
 
 type Model struct {
 	Types map[string][]byte
@@ -21,10 +25,24 @@ func (m *Model) RemoveType(name string) {
 	delete(m.Types, name)
 }
 
-func ParsePackageModal(dir string) (*Model, error) {
+func ParseFileModel(filename string) (*Model, error) {
+	model := &Model{
+		Types: map[string][]byte{},
+	}
+	if gfile.Exists(filename) {
+		f, err := ParseFile(filename)
+		if err != nil {
+			return nil, err
+		}
+		decodeAstFile(f, model)
+	}
+	return model, nil
+}
+
+func ParsePackageModel(dir string) (*Model, error) {
 	dir = formatPath(dir)
 	// 进行全局缓存
-	if m, ok := globalModal[dir]; ok {
+	if m, ok := globalModel[dir]; ok {
 		return m, nil
 	}
 
@@ -43,14 +61,24 @@ func ParsePackageModal(dir string) (*Model, error) {
 		if err != nil {
 			return nil, err
 		}
-		content := f.Content
-		for _, it := range f.InterfaceTypes {
-			model.AddType(it.Name, content[it.Pos-1:it.End-1])
-		}
-		for _, st := range f.StructTypes {
-			model.AddType(st.Name, content[st.Pos-1:st.End-1])
-		}
+		decodeAstFile(f, model)
 	}
-	globalModal[dir] = model
+	globalModel[dir] = model
 	return model, nil
+}
+
+func decodeAstFile(f *File, model *Model) {
+	content := f.Content
+	for _, it := range f.InterfaceTypes {
+		var bytes []byte
+		bytes = append(bytes, []byte("type ")...)
+		bytes = append(bytes, content[it.Pos-1:it.End-1]...)
+		model.AddType(it.Name, bytes)
+	}
+	for _, st := range f.StructTypes {
+		var bytes []byte
+		bytes = append(bytes, []byte("type ")...)
+		bytes = append(bytes, content[st.Pos-1:st.End-1]...)
+		model.AddType(st.Name, bytes)
+	}
 }

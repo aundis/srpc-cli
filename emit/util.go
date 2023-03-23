@@ -1,6 +1,7 @@
 package emit
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"go/token"
@@ -9,7 +10,6 @@ import (
 	"os/exec"
 	"path"
 	"runtime"
-	"sr/parse"
 	"strings"
 )
 
@@ -117,19 +117,6 @@ func fileExist(path string) (bool, error) {
 	return false, err
 }
 
-func stringEndOf(content string, part string) bool {
-	return strings.LastIndex(content, part) == len(content)-len(part)
-}
-
-func resolveImport(file *parse.File, packageName string) *parse.Import {
-	for _, imp := range file.Imports {
-		if imp.Export == packageName {
-			return imp
-		}
-	}
-	return nil
-}
-
 func getPackageName(expr string) string {
 	index := strings.Index(expr, ".")
 	return strings.ReplaceAll(expr[:index], "*", "")
@@ -153,4 +140,25 @@ func command(arg ...string) error {
 		return err
 	}
 	return nil
+}
+
+func getProjectModuleName(dir string) (string, error) {
+	fileName := path.Join(dir, "go.mod")
+	data, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		return "", nil
+	}
+	index := bytes.IndexByte(data, '\n')
+	if index <= 0 {
+		index = len(data)
+	}
+	firstLine := string(data[:index])
+	firstLine = strings.ReplaceAll(firstLine, "\r", "")
+	firstLine = strings.ReplaceAll(firstLine, "\n", "")
+	firstLine = strings.ReplaceAll(firstLine, "module ", "")
+	firstLine = strings.TrimSpace(firstLine)
+	if len(firstLine) == 0 {
+		return "", errors.New("get project module name error")
+	}
+	return firstLine, nil
 }

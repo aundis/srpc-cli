@@ -23,22 +23,37 @@ func mergeMaps(maps ...map[string]srpc.ControllerHandle) map[string]srpc.Control
 }
 `
 
-var globalRoot string
-var globalModule string
-
 func EmitSlot(root string) error {
-	globalRoot = root
 	// 取项目模块名
 	module, err := getProjectModuleName(root)
 	if err != nil {
 		return err
 	}
-	globalModule = module
-	dirs, err := listDir(path.Join(root, "internal", "logic"))
+	e := &slotEmiter{
+		root:   root,
+		module: module,
+		outDir: path.Join(root, "internal", "srpc", "slot"),
+	}
+	err = e.emit()
 	if err != nil {
 		return err
 	}
-	outDir := path.Join(root, "internal", "srpc", "slot")
+	return nil
+}
+
+type slotEmiter struct {
+	root          string
+	module        string
+	outDir        string
+	targetStructs []*parse.StructType
+}
+
+func (e *slotEmiter) emit() error {
+	dirs, err := listDir(path.Join(e.root, "internal", "logic"))
+	if err != nil {
+		return err
+	}
+	outDir := path.Join(e.root, "internal", "srpc", "slot")
 	// 确保输出目录存在
 	err = ensureDirExist(outDir)
 	if err != nil {
@@ -49,13 +64,11 @@ func EmitSlot(root string) error {
 	if err != nil {
 		return err
 	}
-	var exportNames []string
 	for _, dir := range dirs {
-		names, err := emitSlotDir(module, dir, outDir)
+		err := e.emitSlotDir(dir)
 		if err != nil {
 			return err
 		}
-		exportNames = append(exportNames, names...)
 	}
 	// 生成 slot.go
 	writer := newTextWriter()
@@ -65,44 +78,45 @@ func EmitSlot(root string) error {
 	writer.WriteString(mergeMapsFunc).WriteLine()
 	// 合并所有的controller
 	writer.WriteString("var Controllers = mergeMaps(").WriteLine().IncreaseIndent()
-	for _, name := range exportNames {
+	for _, st := range e.targetStructs {
+		name := firstLower(st.Name[1:])
 		writer.WriteString(name+"Controller", ",").WriteLine()
 	}
 	writer.DecreaseIndent().WriteString(")").WriteLine()
 	// 合并所有的helper
 	writer.WriteString("var Helpers = []mate.ObjectMate{").WriteLine().IncreaseIndent()
-	for _, name := range exportNames {
+	for _, st := range e.targetStructs {
+		if !isSlotStruct(st) {
+			continue
+		}
+		name := firstLower(st.Name[1:])
 		writer.WriteString(name+"Helper", ",").WriteLine()
 	}
 	writer.DecreaseIndent().WriteString("}").WriteLine()
-	err = ioutil.WriteFile(path.Join(root, "internal", "srpc", "slot", "slot.go"), writer.Bytes(), fs.ModePerm)
+	err = ioutil.WriteFile(path.Join(e.root, "internal", "srpc", "slot", "slot.go"), writer.Bytes(), fs.ModePerm)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-type StructEmiter struct {
-}
-
-func emitSlotDir(module string, inDir string, outDir string) ([]string, error) {
-	files, err := listFile(inDir)
+func (e *slotEmiter) emitSlotDir(dir string) error {
+	files, err := listFile(dir)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// 解析所有Go文件
 	var astFiles []*parse.File
 	for _, filename := range files {
 		astFile, err := parse.ParseFile(filename)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		astFiles = append(astFiles, astFile)
 	}
 	// 合并结构类型
 	structs := parse.CombineStructTypes(astFiles)
 	// 提取出 slot 和 listen
-	var targetStructs []*parse.StructType
 	for _, st := range structs {
 		// 去掉无类型名称的结构体
 		if len(st.Name) == 0 {
@@ -113,7 +127,7 @@ func emitSlotDir(module string, inDir string, outDir string) ([]string, error) {
 			if len(st.Functions) == 0 {
 				continue
 			}
-			targetStructs = append(targetStructs, st)
+			e.targetStructs = append(e.targetStructs, st)
 			continue
 		}
 		if isListenStruct(st) {
@@ -123,91 +137,49 @@ func emitSlotDir(module string, inDir string, outDir string) ([]string, error) {
 			}
 			target := getListenTarget(st)
 			if len(target) == 0 {
-				return nil, formatError(st.Parent.FileSet, st.Pos, "not set listen object")
+				return formatError(st.Parent.FileSet, st.Pos, "not set listen object")
 			}
-			targetStructs = append(targetStructs, st)
+			e.targetStructs = append(e.targetStructs, st)
 		}
 	}
 	// 无内容则不生成
-	if len(targetStructs) == 0 {
-		return nil, nil
+	if len(e.targetStructs) == 0 {
+		return nil
 	}
-	var names []string
 	// 开始生成代码, 一个结构体对应一个文件
-	for _, st := range targetStructs {
-		names = append(names, firstLower(st.Name[1:]))
+	for _, st := range e.targetStructs {
 		writer := newTextWriter()
-		// 生成头部信息
-		writer.WriteString("package slot")
-		writer.WriteLine()
-		importMap := map[string]string{} // [name]path
-		importMap["srpc"] = "github.com/aundis/srpc"
-		importMap["mate"] = "github.com/aundis/mate"
-		// 如果该类型的方法都只有一个ctx参数, 则不需要导入json
+		writer.WriteString("package slot").WriteLine()
+		// 处理 import
+		collect := newImportCollect()
+		collect.Set("srpc", "github.com/aundis/srpc")
+		collect.Set("mate", "github.com/aundis/mate")
+		collect.Set("service", e.module+"/internal/service")
 		if structNeedImportJson(st) {
-			importMap["json"] = "encoding/json"
+			collect.Set("json", "encoding/json")
 		}
-		importMap["service"] = module + "/internal/service"
-		for _, field := range getStructFields(st) {
-			expr := field.Type
-			if len(expr) == 0 {
-				continue
-			}
-			if !isUsePackage(expr) {
-				continue
-			}
-			name := getPackageName(expr)
-			imp := resolveImport(st.Parent, name)
-			if imp == nil {
-				return nil, formatError(st.Parent.FileSet, field.Pos, "无法找到引用的模块"+name)
-			}
-			if len(importMap[imp.Export]) > 0 && imp.Path != importMap[imp.Export] {
-				fmt.Printf("警告: 模块%s存在不同的导入路径 %s, %s\n", name, imp.Path, importMap[imp.Export])
-			}
-			importMap[imp.Export] = imp.Path
+		err = resolveStructImports(st, collect)
+		if err != nil {
+			return err
 		}
-		for name, path := range importMap {
-			if stringEndOf(path, name) {
-				writer.WriteString(`import "` + path + `"`)
-			} else {
-				writer.WriteString("import " + name + ` "` + path + `"`)
-			}
-			writer.WriteLine()
-		}
+		collect.Emit(writer)
 		// emit
 		err = emitStruct(writer, st)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// helper
-		err := emitSlotHelper(writer, st)
+		err := emitSlotHelper(e.root, e.module, writer, st)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		filename := path.Join(outDir, toSnakeCase(st.Name[1:])+".go")
+		filename := path.Join(e.outDir, toSnakeCase(st.Name[1:])+".go")
 		err = ioutil.WriteFile(filename, writer.Bytes(), fs.ModePerm)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return names, nil
-}
-
-func resolveLocalTypeCode(pkgPath string, typeName string) (string, error) {
-	localPath := convertPackagePathToLocalPath(pkgPath)
-	modal, err := parse.ParsePackageModal(localPath)
-	if err != nil {
-		return "", err
-	}
-	if modal.ContainsType(typeName) {
-		return string(modal.Types[typeName]), nil
-	}
-	return "", fmt.Errorf("package: %s, cannot found type: %s", pkgPath, typeName)
-}
-
-func convertPackagePathToLocalPath(pkgPath string) string {
-	part := strings.Split(pkgPath, "/")
-	return path.Join(globalRoot, strings.Join(part[1:], "/"))
+	return nil
 }
 
 func structNeedImportJson(st *parse.StructType) bool {
@@ -230,24 +202,15 @@ func filterNoExport(list []*parse.Function) []*parse.Function {
 		}
 		// 首个参数必须为 context.Context
 		if len(v.Params) == 0 || v.Params[0].Type != "context.Context" {
-			fmt.Println("警告: " + formatError(v.Parent.FileSet, v.Pos, "首参非context.Context, 方法 "+v.Name+" 被忽略").Error())
+			fmt.Println("warning: " + formatError(v.Parent.FileSet, v.Pos, "first paramater type not context.Context, ignore method "+v.Name).Error())
 			continue
 		}
 		// 最后一个返回值必须为error
 		if len(v.Results) == 0 || v.Results[len(v.Results)-1].Type != "error" {
-			fmt.Println("警告: " + formatError(v.Parent.FileSet, v.Pos, "最后一个返回值不为error, 方法 "+v.Name+" 被忽略").Error())
+			fmt.Println("warning: " + formatError(v.Parent.FileSet, v.Pos, "last return value type not error, ignore method "+v.Name).Error())
 			continue
 		}
 		result = append(result, v)
-	}
-	return result
-}
-
-func getStructFields(structType *parse.StructType) []*parse.Field {
-	var result []*parse.Field
-	for _, fun := range structType.Functions {
-		result = append(result, fun.Params...)
-		result = append(result, fun.Results...)
 	}
 	return result
 }
@@ -272,7 +235,7 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 		// 	P2 int `json:"B"`
 		// }
 		if len(f.Params) > 1 {
-			reqStructName := firstLower(f.Name) + "Request"
+			reqStructName := firstLower(st.Name[1:]) + f.Name + "Request"
 			writer.WriteString("type ", reqStructName, " struct {").WriteLine().IncreaseIndent()
 			for i, p := range f.Params {
 				if i == 0 {
@@ -306,7 +269,7 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 		// 		return
 		// 	}
 		if len(f.Params) > 1 {
-			reqStructName := firstLower(f.Name) + "Request"
+			reqStructName := firstLower(st.Name[1:]) + f.Name + "Request"
 			writer.WriteString("var params *" + reqStructName).WriteLine()
 			writer.WriteString("err = json.Unmarshal(req, &params)").WriteLine()
 			writer.WriteString("if err != nil {").WriteLine().IncreaseIndent()

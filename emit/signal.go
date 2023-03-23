@@ -1,10 +1,12 @@
 package emit
 
 import (
-	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"sr/parse"
+
+	"github.com/gogf/gf/v2/os/gfile"
 )
 
 func EmitSignal(root string) error {
@@ -13,21 +15,38 @@ func EmitSignal(root string) error {
 	if err != nil {
 		return err
 	}
-	dir := path.Join(root, "internal", "srpc", "emit")
-	// 删除历史生成的文件
-	outPath := path.Join(dir, "generate.go")
-	exist, err := fileExist(outPath)
+	emiter := signalEmiter{
+		root:   root,
+		module: module,
+		writer: newTextWriter(),
+	}
+	err = emiter.emit()
 	if err != nil {
 		return err
 	}
-	if exist {
+	return nil
+}
+
+type signalEmiter struct {
+	root   string
+	module string
+	writer TextWriter
+}
+
+func (e *signalEmiter) emit() error {
+	dir := path.Join(e.root, "internal", "srpc", "emit")
+	err := ensureDirExist(dir)
+	if err != nil {
+		return err
+	}
+	// 删除历史生成的文件
+	outPath := path.Join(dir, "generate.go")
+	if gfile.Exists(outPath) {
 		err = os.Remove(outPath)
 		if err != nil {
 			return err
 		}
 	}
-	//
-	writer := newTextWriter()
 	// 获取待处理的Go文件
 	files, err := listFile(dir)
 	if err != nil {
@@ -42,6 +61,7 @@ func EmitSignal(root string) error {
 	if len(goFiles) == 0 {
 		return nil
 	}
+	// 获取所有需要处理的接口类型
 	var interfaceTypes []*parse.InterfaceType
 	for _, filename := range goFiles {
 		astFile, err := parse.ParseFile(filename)
@@ -50,58 +70,38 @@ func EmitSignal(root string) error {
 		}
 		for _, it := range astFile.InterfaceTypes {
 			interfaceTypes = append(interfaceTypes, it)
-			err = emitInterface(writer, "main", it, true)
-			if err != nil {
-				return err
-			}
 		}
 	}
 	// 内容不生成文件
 	if len(interfaceTypes) == 0 {
 		return nil
 	}
-
-	importMap := map[string]string{} // [name]path
-	importMap["context"] = "context"
-	importMap["json"] = "encoding/json"
-	importMap["srpc"] = "github.com/aundis/srpc"
-	importMap["mate"] = "github.com/aundis/mate"
-	importMap["service"] = module + "/internal/service"
+	// 生成头部信息
+	writer := e.writer
+	writer.WriteString("package emit").WriteLine()
+	collect := newImportCollect()
+	collect.Set("context", "context")
+	collect.Set("json", "encoding/json")
+	collect.Set("srpc", "github.com/aundis/srpc")
+	collect.Set("mate", "github.com/aundis/mate")
+	collect.Set("service", e.module+"/internal/service")
 	for _, it := range interfaceTypes {
-		fields := getInterfaceFields(it)
-		for _, field := range fields {
-			expr := field.Type
-			if len(expr) == 0 {
-				continue
-			}
-			if !isUsePackage(expr) {
-				continue
-			}
-			name := getPackageName(expr)
-			imp := resolveImport(it.Parent, name)
-			if imp == nil {
-				return formatError(it.Parent.FileSet, field.Pos, "cannot found refrence pacakge"+name)
-			}
-			if len(importMap[imp.Export]) > 0 && imp.Path != importMap[imp.Export] {
-				fmt.Printf("warning: package %s exist different import path %s, %s\n", name, imp.Path, importMap[imp.Export])
-			}
-			importMap[imp.Export] = imp.Path
+		err = resolveInterfaceImports(it, collect)
+		if err != nil {
+			return err
 		}
 	}
-	headerWriter := newTextWriter()
-	headerWriter.WriteString("package emit")
-	headerWriter.WriteLine()
-	for name, path := range importMap {
-		if stringEndOf(path, name) {
-			headerWriter.WriteString(`import "` + path + `"`)
-		} else {
-			headerWriter.WriteString("import " + name + ` "` + path + `"`)
+	collect.Emit(e.writer)
+	// 生成代码内容
+	for _, it := range interfaceTypes {
+		err = emitInterface(e.writer, "main", it, true)
+		if err != nil {
+			return err
 		}
-		headerWriter.WriteLine()
 	}
 	// helper 放到文件内容尾部
 	for _, it := range interfaceTypes {
-		err = emitSignalHelper(writer, it)
+		err = emitSignalHelper(e.root, e.module, writer, it)
 		if err != nil {
 			return err
 		}
@@ -112,25 +112,7 @@ func EmitSignal(root string) error {
 		writer.WriteString(firstLower(it.Name[1:]), "Helper,").WriteLine()
 	}
 	writer.DecreaseIndent().WriteString("}").WriteLine()
-	// 写出到文件
-	out, err := os.Create(outPath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	// 先写入头部信息
-	_, err = out.Write(headerWriter.Bytes())
-	if err != nil {
-		return err
-	}
-	// 再写入内容
-	_, err = out.Write(writer.Bytes())
-	if err != nil {
-		return err
-	}
-	out.Close()
-	// 对生成的go文件进行格式化
-	err = command("gofmt", "-w", outPath)
+	err = ioutil.WriteFile(outPath, writer.Bytes(), os.ModePerm)
 	if err != nil {
 		return err
 	}

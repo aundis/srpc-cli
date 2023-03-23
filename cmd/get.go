@@ -6,8 +6,12 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"sr/emit"
+	"strings"
 )
 
 // Version implements the Version cmd.
@@ -25,14 +29,45 @@ func (g *Get) DetailedHelp(f *flag.FlagSet) {
 }
 
 // Run prints Version information to stdout.
-func (g *Get) Run(_ context.Context, args ...string) error {
-	// dir, err := os.Getwd()
-	// if err != nil {
-	// 	return err
-	// }
-	// if len(args) == 0 {
-	// 	return errors.New("缺少参数")
-	// }
+func (g *Get) Run(ctx context.Context, args ...string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		return errors.New("缺少参数")
+	}
+	if len(args) != 2 {
+		return errors.New("argument error, e.g. [call/listen] [target[@object]]")
+	}
+	var target, object string
+	kind := args[0]
+	if kind == "call" {
+		if strings.Contains(args[1], "@") {
+			arr := strings.Split(args[1], "@")
+			target = arr[0]
+			object = arr[1]
+		} else {
+			target = args[0]
+		}
+
+		clinet, err := newSrpcClinet(ctx)
+		if err != nil {
+			return err
+		}
+		list, err := requestObjectMate(ctx, clinet, target, helperListReq{Kind: "slot", Name: object})
+		if err != nil {
+			return err
+		}
+		if len(list) > 0 {
+			for _, v := range list {
+				err = emit.EmitCallInterfaceFromHelper(dir, target, &v)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
 
 	return nil
 }
