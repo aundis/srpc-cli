@@ -19,7 +19,7 @@ type Gen struct {
 
 func (g *Gen) Name() string      { return "gen" }
 func (g *Gen) Usage() string     { return "[call/slot/signal]" }
-func (g *Gen) ShortHelp() string { return "build call signal or slot" }
+func (g *Gen) ShortHelp() string { return "generate call signal or slot" }
 func (g *Gen) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
 	f.PrintDefaults()
@@ -33,6 +33,9 @@ func (g *Gen) Run(_ context.Context, args ...string) error {
 	}
 	if len(args) == 0 {
 		return errors.New("missing augument [call/slot/signal]")
+	}
+	if len(args) > 1 {
+		return errors.New("augument too more")
 	}
 	switch args[0] {
 	case "slot":

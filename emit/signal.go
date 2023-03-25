@@ -83,7 +83,7 @@ func (e *signalEmiter) emit() error {
 	collect.Set("context", "context")
 	collect.Set("json", "encoding/json")
 	collect.Set("srpc", "github.com/aundis/srpc")
-	collect.Set("mate", "github.com/aundis/mate")
+	collect.Set("meta", "github.com/aundis/meta")
 	collect.Set("service", e.module+"/internal/service")
 	for _, it := range interfaceTypes {
 		err = resolveInterfaceImports(it, collect)
@@ -107,7 +107,7 @@ func (e *signalEmiter) emit() error {
 		}
 	}
 	// helper 合并
-	writer.WriteString("var Helpers = []mate.ObjectMate{").WriteLine().IncreaseIndent()
+	writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
 	for _, it := range interfaceTypes {
 		writer.WriteString(firstLower(it.Name[1:]), "Helper,").WriteLine()
 	}

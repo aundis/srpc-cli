@@ -20,7 +20,7 @@ type Get struct {
 
 func (g *Get) Name() string      { return "get" }
 func (g *Get) Usage() string     { return "[call/listen] [target[@object]]" }
-func (g *Get) ShortHelp() string { return "get call or listen" }
+func (g *Get) ShortHelp() string { return "get call or listen from remote service" }
 func (g *Get) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), `
 [@object] if not set, get all object.
@@ -55,7 +55,7 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 		if err != nil {
 			return err
 		}
-		list, err := requestObjectMate(ctx, clinet, target, helperListReq{Kind: "slot", Name: object})
+		list, err := requestObjectMeta(ctx, clinet, target, helperListReq{Kind: "slot", Name: object})
 		if err != nil {
 			return err
 		}
@@ -65,8 +65,37 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 				if err != nil {
 					return err
 				}
+				// fmt.Printf("get call %s declaration\n", v.Name)
 			}
 		}
+	} else if kind == "listen" {
+		if !strings.Contains(args[1], "@") {
+			return errors.New("argument error, e.g. target@object")
+		}
+		arr := strings.Split(args[1], "@")
+		target = arr[0]
+		object = arr[1]
+		clinet, err := newSrpcClinet(ctx)
+		if err != nil {
+			return err
+		}
+		list, err := requestObjectMeta(ctx, clinet, target, helperListReq{Kind: "signal", Name: object})
+		if err != nil {
+			return err
+		}
+		if len(list) == 0 {
+			return fmt.Errorf("not fount object %s from %s", object, target)
+		}
+		if len(list) > 1 {
+			return fmt.Errorf("match object to more")
+		}
+		ometa := list[0]
+		err = emit.EmitListenFromHelper(dir, target, &ometa)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("kind error, kind must be call or listen")
 	}
 
 	return nil

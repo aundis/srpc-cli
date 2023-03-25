@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aundis/mate"
+	"github.com/aundis/meta"
 )
 
 // Version implements the Version cmd.
@@ -20,7 +20,7 @@ type Fls struct {
 
 func (f *Fls) Name() string      { return "fls" }
 func (f *Fls) Usage() string     { return "[target@object]" }
-func (f *Fls) ShortHelp() string { return "object function list" }
+func (f *Fls) ShortHelp() string { return "list remote service object functionss" }
 func (f *Fls) DetailedHelp(fla *flag.FlagSet) {
 	fmt.Fprint(fla.Output(), ``)
 	fla.PrintDefaults()
@@ -41,7 +41,7 @@ func (f *Fls) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	list, err := requestObjectMate(ctx, clinet, target, helperListReq{Name: objectName})
+	list, err := requestObjectMeta(ctx, clinet, target, helperListReq{Name: objectName})
 	if err != nil {
 		return err
 	}
@@ -56,9 +56,9 @@ func (f *Fls) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-func printFunction(fmate *mate.FunctionMate) {
-	fmt.Print(fmate.Name, " (")
-	for i, p := range fmate.Parameters {
+func printFunction(fmeta *meta.FunctionMeta) {
+	fmt.Print(fmeta.Name, " (")
+	for i, p := range fmeta.Parameters {
 		if i != 0 {
 			fmt.Print(", ")
 		}
@@ -66,10 +66,10 @@ func printFunction(fmate *mate.FunctionMate) {
 		fmt.Print(p.Type)
 	}
 	fmt.Print(") ")
-	if len(fmate.Results) > 1 {
+	if len(fmeta.Results) > 1 {
 		fmt.Print("(")
 	}
-	for i, r := range fmate.Results {
+	for i, r := range fmeta.Results {
 		if i != 0 {
 			fmt.Print(", ")
 		}
@@ -78,7 +78,7 @@ func printFunction(fmate *mate.FunctionMate) {
 		}
 		fmt.Print(r.Type)
 	}
-	if len(fmate.Results) > 1 {
+	if len(fmeta.Results) > 1 {
 		fmt.Print(")")
 	}
 	fmt.Print("\n")

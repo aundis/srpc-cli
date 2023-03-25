@@ -74,7 +74,7 @@ func (e *slotEmiter) emit() error {
 	writer := newTextWriter()
 	writer.WriteString("package slot").WriteLine()
 	writer.WriteString("import \"github.com/aundis/srpc\"").WriteLine()
-	writer.WriteString("import \"github.com/aundis/mate\"").WriteLine()
+	writer.WriteString("import \"github.com/aundis/meta\"").WriteLine()
 	writer.WriteString(mergeMapsFunc).WriteLine()
 	// 合并所有的controller
 	writer.WriteString("var Controllers = mergeMaps(").WriteLine().IncreaseIndent()
@@ -84,7 +84,7 @@ func (e *slotEmiter) emit() error {
 	}
 	writer.DecreaseIndent().WriteString(")").WriteLine()
 	// 合并所有的helper
-	writer.WriteString("var Helpers = []mate.ObjectMate{").WriteLine().IncreaseIndent()
+	writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
 	for _, st := range e.targetStructs {
 		if !isSlotStruct(st) {
 			continue
@@ -153,7 +153,7 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 		// 处理 import
 		collect := newImportCollect()
 		collect.Set("srpc", "github.com/aundis/srpc")
-		collect.Set("mate", "github.com/aundis/mate")
+		collect.Set("meta", "github.com/aundis/meta")
 		collect.Set("service", e.module+"/internal/service")
 		if structNeedImportJson(st) {
 			collect.Set("json", "encoding/json")
@@ -342,7 +342,7 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 
 func isSlotStruct(tpe *parse.StructType) bool {
 	for _, v := range tpe.Fields {
-		if v.Type == "mate.Slot" {
+		if v.Type == "meta.Slot" {
 			return true
 		}
 	}
@@ -351,7 +351,7 @@ func isSlotStruct(tpe *parse.StructType) bool {
 
 func isListenStruct(tpe *parse.StructType) bool {
 	for _, v := range tpe.Fields {
-		if v.Type == "mate.Listen" {
+		if v.Type == "meta.Listen" {
 			return true
 		}
 	}
@@ -360,7 +360,7 @@ func isListenStruct(tpe *parse.StructType) bool {
 
 func getListenTarget(tpe *parse.StructType) string {
 	for _, v := range tpe.Fields {
-		if v.Type == "mate.Listen" {
+		if v.Type == "meta.Listen" {
 			return v.Tag.Get("target")
 		}
 	}

@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/aundis/mate"
+	"github.com/aundis/meta"
 	"github.com/aundis/srpc"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/gclient"
 )
 
-func requestObjectMate(ctx context.Context, client *srpc.Client, target string, req helperListReq) ([]mate.ObjectMate, error) {
+func requestObjectMeta(ctx context.Context, client *srpc.Client, target string, req helperListReq) ([]meta.ObjectMeta, error) {
 	data, err := json.Marshal(req)
 	if err != nil {
 		return nil, err

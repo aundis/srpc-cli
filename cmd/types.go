@@ -1,6 +1,6 @@
 package cmd
 
-import "github.com/aundis/mate"
+import "github.com/aundis/meta"
 
 type helperListReq struct {
 	Name string `json:"name"`
@@ -8,5 +8,5 @@ type helperListReq struct {
 }
 
 type helperListRes struct {
-	List []mate.ObjectMate `json:"list"`
+	List []meta.ObjectMeta `json:"list"`
 }

@@ -17,7 +17,7 @@ type Ols struct {
 
 func (o *Ols) Name() string      { return "ols" }
 func (o *Ols) Usage() string     { return "[target]" }
-func (o *Ols) ShortHelp() string { return "object list" }
+func (o *Ols) ShortHelp() string { return "list remote service objects" }
 func (o *Ols) DetailedHelp(f *flag.FlagSet) {
 	fmt.Fprint(f.Output(), ``)
 	f.PrintDefaults()
@@ -32,7 +32,7 @@ func (c *Ols) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	list, err := requestObjectMate(ctx, clinet, args[0], helperListReq{})
+	list, err := requestObjectMeta(ctx, clinet, args[0], helperListReq{})
 	if err != nil {
 		return err
 	}

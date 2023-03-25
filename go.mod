@@ -3,7 +3,7 @@ module sr
 go 1.18
 
 require (
-	github.com/aundis/mate v1.0.0
+	github.com/aundis/meta v1.0.5
 	github.com/gogf/gf/v2 v2.3.3
 )
 
