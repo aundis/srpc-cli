@@ -322,19 +322,41 @@ func (e *callInterfaceEmiter) emitRaw() error {
 func (e *callInterfaceEmiter) emitBody() error {
 	ometa := e.ometa
 	writer := e.writer
+
 	writer.WriteString("type I", ometa.Name, " interface {").WriteLine().IncreaseIndent()
 	for _, fmeta := range ometa.Functions {
-		err := e.emitFunctionn(fmeta)
+		err := e.emitFunction(fmeta)
 		if err != nil {
 			return err
 		}
 	}
 	writer.DecreaseIndent().WriteString("}").WriteLine()
 
+	// var localMath IMath
+	// func Math() IMath {
+	// 	if localSort == nil {
+	// 		panic("implement not found for interface IMath, forgot register?")
+	// 	}
+	// 	return localMath
+	// }
+	// func RegisterMath(i IMath) {
+	// 	localMath = i
+	// }
+
+	writer.WriteString("var local", e.ometa.Name, " I", e.ometa.Name).WriteLine()
+	writer.WriteString("func ", e.ometa.Name, "() I", e.ometa.Name, "{").WriteLine().IncreaseIndent()
+	writer.WriteString("if localSort == nil {").IncreaseIndent()
+	writer.WriteString(`panic("implement not found for interface I`, e.ometa.Name, `, forgot register?")`)
+	writer.DecreaseIndent().WriteString("}").WriteLine()
+	writer.WriteString("return local", e.ometa.Name).WriteLine()
+	writer.DecreaseIndent().WriteString("}").WriteLine()
+	writer.WriteString("func Register", e.ometa.Name, "(i I", e.ometa.Name, ") {").IncreaseIndent()
+	writer.WriteString("local", e.ometa.Name, " = i")
+	writer.DecreaseIndent().WriteString("}").WriteLine()
 	return nil
 }
 
-func (e *callInterfaceEmiter) emitFunctionn(fmeta *meta.FunctionMeta) error {
+func (e *callInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 	writer := e.writer
 	writer.WriteString(fmeta.Name, "(")
 	for i, p := range fmeta.Parameters {

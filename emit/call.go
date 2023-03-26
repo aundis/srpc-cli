@@ -4,8 +4,11 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"regexp"
 	"sr/parse"
 	"strconv"
+
+	"github.com/gogf/gf/v2/os/gfile"
 )
 
 func EmitCall(root string) error {
@@ -25,7 +28,7 @@ func EmitCall(root string) error {
 		return err
 	}
 	for _, dir := range dirs {
-		err = emitCallDir(module, dir)
+		err = emitCallDir(root, module, dir)
 		if err != nil {
 			return err
 		}
@@ -33,22 +36,16 @@ func EmitCall(root string) error {
 	return nil
 }
 
-func emitCallDir(module string, dir string) error {
+func emitCallDir(root, module string, dir string) error {
 	base := path.Base(dir)
-	// 删除历史生成的文件
-	outPath := path.Join(dir, "generate.go")
-	exist, err := fileExist(outPath)
-	if err != nil {
-		return err
-	}
-	if exist {
-		err = os.Remove(outPath)
+	// 删除历史生成的目录
+	outPath := path.Join(dir, "call")
+	if gfile.Exists(outPath) {
+		err := gfile.Remove(outPath)
 		if err != nil {
 			return err
 		}
 	}
-	//
-	writer := newTextWriter()
 	// 获取待处理的Go文件
 	files, err := listFile(dir)
 	if err != nil {
@@ -82,47 +79,99 @@ func emitCallDir(module string, dir string) error {
 	if len(interfaceTypes) == 0 {
 		return nil
 	}
-	// 生成头部信息
-	writer.WriteString("package ", base).WriteLine()
-	collect := newImportCollect()
-	collect.Set("context", "context")
-	collect.Set("json", "encoding/json")
-	collect.Set("srpc", "github.com/aundis/srpc")
-	collect.Set("service", module+"/internal/service")
-	for _, it := range interfaceTypes {
-		err = resolveInterfaceImports(it, collect)
-		if err != nil {
-			return err
-		}
-	}
-	collect.Emit(writer)
-	// 生成内容
+	// 生成
 	for _, it := range interfaceTypes {
 		target := base
-		err = emitInterface(writer, target, it, false)
+		err = emitCallStruct(root, module, target, it)
 		if err != nil {
 			return err
 		}
 	}
-	err = ioutil.WriteFile(outPath, writer.Bytes(), os.ModePerm)
+	return nil
+}
+
+func emitCallStruct(root, module, target string, it *parse.InterfaceType) error {
+	e := &callStructEmiter{
+		writer: newTextWriter(),
+		root:   root,
+		module: module,
+		target: target,
+		it:     it,
+	}
+	return e.emit()
+}
+
+type callStructEmiter struct {
+	root   string
+	module string
+	target string
+	it     *parse.InterfaceType
+	writer TextWriter
+}
+
+func (e *callStructEmiter) emit() error {
+	err := e.emitHeader()
+	if err != nil {
+		return err
+	}
+	err = e.emitBody()
+	if err != nil {
+		return err
+	}
+
+	outDir := path.Join(e.root, "internal", "srpc", "service", e.target, "call")
+	err = ensureDirExist(outDir)
+	if err != nil {
+		return err
+	}
+	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, "call", toSnakeCase(e.it.Name[1:])+".go")
+	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, signal bool) error {
-	// 👉 首先生成接口的结构体
+func (e *callStructEmiter) emitHeader() error {
+	e.writer.WriteString("package call").WriteLine()
+	err := e.emitImports()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *callStructEmiter) emitImports() error {
+	collect := newImportCollect()
+	collect.Set("context", "context")
+	collect.Set("json", "encoding/json")
+	collect.Set("srpc", "github.com/aundis/srpc")
+	collect.Set("service", e.module+"/internal/service")
+	collect.Set(e.target, e.module+"/internal/srpc/service/"+e.target)
+	err := resolveInterfaceImports(e.it, collect)
+	if err != nil {
+		return err
+	}
+	collect.Emit(e.writer)
+	return nil
+}
+
+func (e *callStructEmiter) emitBody() error {
+	it := e.it
+	writer := e.writer
+	// 注册
+	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
+	writer.WriteString(e.target, ".", "Register", e.it.Name[1:], "(&", "c"+it.Name[1:], "{})").WriteLine()
+	writer.DecreaseIndent().WriteString("}").WriteLine()
+	// 首先生成接口的结构体
 	// 接口的名称需要I开头
 	if string(it.Name[0]) != "I" {
-		return formatError(it.Parent.FileSet, it.Pos, "接口名称必须以I开头")
+		return formatError(it.Parent.FileSet, it.Pos, "interface name must start with an \"I\"")
 	}
 	structName := "c" + it.Name[1:]
 	writer.WriteString("type ", structName, " struct {}").WriteLine()
-	// 写出变量
-	writer.WriteString("var ", firstUpper(it.Name[1:]), " ", it.Name, " = ", "&"+structName+"{}").WriteLine()
 	for _, fun := range it.Functions {
-		// 👉 先生成返回类型的结构体, 如果有返回值的话
+		// 先生成返回类型的结构体, 如果有返回值的话
 		responseStructName := firstLower(fun.Name) + "Response"
 		if len(fun.Results) > 1 {
 			writer.WriteString("type ", responseStructName, " struct {").WriteLine().IncreaseIndent()
@@ -138,7 +187,7 @@ func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, si
 
 		// writer.WriteString(fmt.Sprintf("func (c *%s) %s (", structName, m.Name))
 		writer.WriteString("func (c *", structName, ") ", fun.Name, " (")
-		// 👉 写参数
+		// 写参数
 		for i, p := range fun.Params {
 			// 首参数校验
 			if i == 0 {
@@ -158,16 +207,12 @@ func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, si
 				name := "p" + strconv.Itoa(i)
 				writer.WriteString(name)
 			}
-			writer.WriteString(" ", p.Type)
+			writer.WriteString(" ", e.formatType(p.Type))
 		}
 		writer.WriteString(")")
-		// 👉 写返回值
-		// 必须有返回值
+		// 写返回值
 		if len(fun.Results) == 0 {
 			return formatError(it.Parent.FileSet, fun.Pos, "method must provide a return value of type error")
-		}
-		if signal && len(fun.Results) > 1 {
-			return formatError(it.Parent.FileSet, fun.Pos, "signal method can only have one return value")
 		}
 		writer.WriteString(" (")
 		for i, r := range fun.Results {
@@ -180,13 +225,13 @@ func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, si
 			if i != 0 {
 				writer.WriteString(", ")
 			}
-			// 👉 统一设置为命名返回值
+			// 统一设置为命名返回值
 			if r.Type == "error" {
 				writer.WriteString("err")
 			} else {
 				writer.WriteString("r" + strconv.Itoa(i+1))
 			}
-			writer.WriteString(" ", r.Type)
+			writer.WriteString(" ", e.formatType(r.Type))
 		}
 		writer.WriteString(")", " {").WriteLine().IncreaseIndent()
 		// 方法体内容
@@ -226,20 +271,15 @@ func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, si
 			writer.WriteString("_, err = ")
 		}
 		writer.WriteString("service.Srpc().Request(ctx, srpc.RequestData {").IncreaseIndent().WriteLine()
-		if signal {
-			writer.WriteString("Mark: srpc.EmitMark,")
-		} else {
-			writer.WriteString("Mark: srpc.CallMark,")
-		}
-		writer.WriteLine()
-		writer.WriteString(`Target: "` + target + `",`).WriteLine()
+		writer.WriteString("Mark: srpc.CallMark,").WriteLine()
+		writer.WriteString(`Target: "` + e.target + `",`).WriteLine()
 		writer.WriteString(`Action: "`, it.Name[1:], ".", fun.Name, `",`).WriteLine()
 		writer.WriteString("Data:   data,").WriteLine()
 		writer.DecreaseIndent().WriteString("})").WriteLine()
 		writer.WriteString("if err != nil {").WriteLine().IncreaseIndent()
 		writer.WriteString("return").WriteLine()
 		writer.DecreaseIndent().WriteString("}").WriteLine()
-		// 👉 如果没有返回值, 可以直接退出了
+		// 如果没有返回值, 可以直接退出了
 		if len(fun.Results) > 1 {
 			//  var rsp *xxxResponse
 			// 	jsn, err := json.Unmarshal(res, &rsp)
@@ -263,4 +303,14 @@ func emitInterface(writer TextWriter, target string, it *parse.InterfaceType, si
 		writer.DecreaseIndent().WriteString("}").WriteLine()
 	}
 	return nil
+}
+
+func (e *callStructEmiter) formatType(tpe string) string {
+	reg := regexp.MustCompile(`\b(\.?[A-Z]\w*\.?)\b`)
+	return reg.ReplaceAllStringFunc(tpe, func(s string) string {
+		if s[0] != '.' && s[len(s)-1] != '.' {
+			return e.target + "." + s
+		}
+		return s
+	})
 }
