@@ -14,6 +14,7 @@ type TextWriter interface {
 	Write(p []byte) TextWriter
 	WriteString(s ...string) TextWriter
 	WriteLine() TextWriter
+	WriteEmptyLine() TextWriter
 
 	IncreaseIndent() TextWriter
 	DecreaseIndent() TextWriter
@@ -86,6 +87,14 @@ func (w *textWriter) WriteLine() TextWriter {
 		w.linePos = len(w.output.String())
 		w.lineStart = true
 	}
+	return w
+}
+
+func (w *textWriter) WriteEmptyLine() TextWriter {
+	w.output.WriteString(w.newLine)
+	w.lineCount++
+	w.linePos = len(w.output.String())
+	w.lineStart = true
 	return w
 }
 

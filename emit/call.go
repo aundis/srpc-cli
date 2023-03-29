@@ -133,7 +133,9 @@ func (e *callStructEmiter) emit() error {
 }
 
 func (e *callStructEmiter) emitHeader() error {
+	e.writer.WriteString(generatedHeader).WriteLine()
 	e.writer.WriteString("package call").WriteLine()
+	e.writer.WriteEmptyLine()
 	err := e.emitImports()
 	if err != nil {
 		return err
@@ -160,6 +162,7 @@ func (e *callStructEmiter) emitBody() error {
 	it := e.it
 	writer := e.writer
 	// 注册
+	writer.WriteEmptyLine()
 	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
 	writer.WriteString(e.target, ".", "Register", e.it.Name[1:], "(&", "c"+it.Name[1:], "{})").WriteLine()
 	writer.DecreaseIndent().WriteString("}").WriteLine()
@@ -169,11 +172,13 @@ func (e *callStructEmiter) emitBody() error {
 		return formatError(it.Parent.FileSet, it.Pos, "interface name must start with an \"I\"")
 	}
 	structName := "c" + it.Name[1:]
+	writer.WriteEmptyLine()
 	writer.WriteString("type ", structName, " struct {}").WriteLine()
 	for _, fun := range it.Functions {
 		// 先生成返回类型的结构体, 如果有返回值的话
 		responseStructName := firstLower(fun.Name) + "Response"
 		if len(fun.Results) > 1 {
+			writer.WriteEmptyLine()
 			writer.WriteString("type ", responseStructName, " struct {").WriteLine().IncreaseIndent()
 			for i, r := range fun.Results {
 				if i == len(fun.Results)-1 {
@@ -186,6 +191,7 @@ func (e *callStructEmiter) emitBody() error {
 		}
 
 		// writer.WriteString(fmt.Sprintf("func (c *%s) %s (", structName, m.Name))
+		writer.WriteEmptyLine()
 		writer.WriteString("func (c *", structName, ") ", fun.Name, " (")
 		// 写参数
 		for i, p := range fun.Params {

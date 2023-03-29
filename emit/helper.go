@@ -48,6 +48,7 @@ type helperEmiter struct {
 
 func (e *helperEmiter) emitHelperRest(file *parse.File, name, kind string, funcs []*parse.Function) error {
 	writer := e.writer
+	writer.WriteEmptyLine()
 	writer.WriteString("var ", firstLower(name), "Helper = meta.ObjectMeta{").WriteLine().IncreaseIndent()
 	writer.WriteString(`Name: "`, name, `",`).WriteLine()
 	writer.WriteString(`Kind: "`, kind, `",`).WriteLine()
@@ -132,7 +133,7 @@ func (e *helperEmiter) resolveFieldMeta(module string, file *parse.File, name, t
 			if isProjectPackage(module, imp.Path) {
 				// raw
 				if imp.Export != "model" {
-					fmt.Printf("warning: type %s.%s is not placed under the project's modal package, and code generation may cause duplicate names", scope, typeName)
+					fmt.Printf("warning: type %s.%s is not placed under the project's modal package, and code generation may cause duplicate names\n", scope, typeName)
 				}
 				// 提取本地类型的代码
 				code, err := e.resolveLocalTypeCode(imp.Path, typeName)
@@ -249,6 +250,7 @@ func (e *callInterfaceEmiter) emit() error {
 }
 
 func (e *callInterfaceEmiter) emitHeader() error {
+	e.writer.WriteString(generatedHeader).WriteLine()
 	e.writer.WriteString("package ", e.target).WriteLine()
 	err := e.emitImports()
 	if err != nil {
@@ -277,6 +279,7 @@ func (e *callInterfaceEmiter) emitImports() error {
 			// collect.Set(e.target, e.module+"/internal/srpc/model/"+e.target)
 		}
 	}
+	e.writer.WriteEmptyLine()
 	collect.Emit(e.writer)
 	return nil
 }
@@ -307,8 +310,10 @@ func (e *callInterfaceEmiter) emitRaw() error {
 		model.AddType(rmeta.Name, []byte(rmeta.Code))
 	}
 	writer := newTextWriter()
+	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package ", e.target).WriteLine()
 	for _, v := range model.Types {
+		writer.WriteEmptyLine()
 		writer.Write(v)
 		writer.WriteLine()
 	}
@@ -322,7 +327,7 @@ func (e *callInterfaceEmiter) emitRaw() error {
 func (e *callInterfaceEmiter) emitBody() error {
 	ometa := e.ometa
 	writer := e.writer
-
+	writer.WriteEmptyLine()
 	writer.WriteString("type I", ometa.Name, " interface {").WriteLine().IncreaseIndent()
 	for _, fmeta := range ometa.Functions {
 		err := e.emitFunction(fmeta)
@@ -342,16 +347,18 @@ func (e *callInterfaceEmiter) emitBody() error {
 	// func RegisterMath(i IMath) {
 	// 	localMath = i
 	// }
-
+	writer.WriteEmptyLine()
 	writer.WriteString("var local", e.ometa.Name, " I", e.ometa.Name).WriteLine()
+	writer.WriteEmptyLine()
 	writer.WriteString("func ", e.ometa.Name, "() I", e.ometa.Name, "{").WriteLine().IncreaseIndent()
 	writer.WriteString("if localSort == nil {").IncreaseIndent()
 	writer.WriteString(`panic("implement not found for interface I`, e.ometa.Name, `, forgot register?")`)
 	writer.DecreaseIndent().WriteString("}").WriteLine()
 	writer.WriteString("return local", e.ometa.Name).WriteLine()
 	writer.DecreaseIndent().WriteString("}").WriteLine()
-	writer.WriteString("func Register", e.ometa.Name, "(i I", e.ometa.Name, ") {").IncreaseIndent()
-	writer.WriteString("local", e.ometa.Name, " = i")
+	writer.WriteEmptyLine()
+	writer.WriteString("func Register", e.ometa.Name, "(i I", e.ometa.Name, ") {").WriteLine().IncreaseIndent()
+	writer.WriteString("local", e.ometa.Name, " = i").WriteLine()
 	writer.DecreaseIndent().WriteString("}").WriteLine()
 	return nil
 }
@@ -385,17 +392,25 @@ func (e *callInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 	return nil
 }
 
-func EmitListenFromHelper(root string, target string, ometa *meta.ObjectMeta) error {
+func EmitListenFromHelper(root, target, service, filename string, ometa *meta.ObjectMeta) error {
 	module, err := getProjectModuleName(root)
 	if err != nil {
 		return err
 	}
+	if len(filename) == 0 {
+		filename = toSnakeCase(ometa.Name) + ".go"
+	}
+	if !stringEndOf(filename, ".go") {
+		filename += ".go"
+	}
 	emiter := &listenStructEmiter{
-		root:   root,
-		target: target,
-		ometa:  ometa,
-		module: module,
-		writer: newTextWriter(),
+		root:     root,
+		target:   target,
+		service:  service,
+		filename: filename,
+		ometa:    ometa,
+		module:   module,
+		writer:   newTextWriter(),
 	}
 	err = emiter.emit()
 	if err != nil {
@@ -405,11 +420,13 @@ func EmitListenFromHelper(root string, target string, ometa *meta.ObjectMeta) er
 }
 
 type listenStructEmiter struct {
-	root   string
-	target string
-	ometa  *meta.ObjectMeta
-	module string
-	writer TextWriter
+	root     string
+	target   string
+	service  string
+	filename string
+	ometa    *meta.ObjectMeta
+	module   string
+	writer   TextWriter
 }
 
 func (e *listenStructEmiter) emit() error {
@@ -431,7 +448,7 @@ func (e *listenStructEmiter) emit() error {
 	if err != nil {
 		return err
 	}
-	outPath := path.Join(e.root, "internal", "srpc", toSnakeCase(e.ometa.Name)+".go")
+	outPath := path.Join(e.root, "internal", "logic", e.service, e.filename)
 	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
 	if err != nil {
 		return err
@@ -440,7 +457,9 @@ func (e *listenStructEmiter) emit() error {
 }
 
 func (e *listenStructEmiter) emitHeader() error {
-	e.writer.WriteString("package ", e.target).WriteLine()
+	e.writer.WriteString(generatedHeader).WriteLine()
+	e.writer.WriteString("package ", e.service).WriteLine()
+	e.writer.WriteEmptyLine()
 	err := e.emitImports()
 	if err != nil {
 		return err
@@ -501,8 +520,10 @@ func (e *listenStructEmiter) emitRaw() error {
 		model.AddType(rmeta.Name, []byte(rmeta.Code))
 	}
 	writer := newTextWriter()
+	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package ", e.target).WriteLine()
 	for _, v := range model.Types {
+		writer.WriteEmptyLine()
 		writer.Write(v)
 		writer.WriteLine()
 	}
@@ -516,6 +537,7 @@ func (e *listenStructEmiter) emitRaw() error {
 func (e *listenStructEmiter) emitBody() error {
 	ometa := e.ometa
 	writer := e.writer
+	writer.WriteEmptyLine()
 	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
 	writer.WriteString("service.Register", ometa.Name, "(&s", ometa.Name, "{})").WriteLine()
 	writer.DecreaseIndent().WriteString("}").WriteLine()
@@ -534,6 +556,7 @@ func (e *listenStructEmiter) emitBody() error {
 
 func (e *listenStructEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 	writer := e.writer
+	writer.WriteEmptyLine()
 	writer.WriteString("func (s *s", e.ometa.Name, ") ", fmeta.Name, "(")
 	for i, p := range fmeta.Parameters {
 		if i != 0 {

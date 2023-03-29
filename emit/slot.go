@@ -71,9 +71,12 @@ func (e *slotEmiter) emit() error {
 	}
 	// 生成 slot.go
 	writer := newTextWriter()
+	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package slot").WriteLine()
+	writer.WriteEmptyLine()
 	writer.WriteString("import \"github.com/aundis/srpc\"").WriteLine()
 	writer.WriteString("import \"github.com/aundis/meta\"").WriteLine()
+	writer.WriteEmptyLine()
 	writer.WriteString(mergeMapsFunc).WriteLine()
 	// 合并所有的controller
 	writer.WriteString("var Controllers = mergeMaps(").WriteLine().IncreaseIndent()
@@ -83,6 +86,7 @@ func (e *slotEmiter) emit() error {
 	}
 	writer.DecreaseIndent().WriteString(")").WriteLine()
 	// 合并所有的helper
+	writer.WriteEmptyLine()
 	writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
 	for _, st := range e.targetStructs {
 		if !isSlotStruct(st) {
@@ -148,12 +152,15 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 	// 开始生成代码, 一个结构体对应一个文件
 	for _, st := range e.targetStructs {
 		writer := newTextWriter()
+		writer.WriteString(generatedHeader).WriteLine()
 		writer.WriteString("package slot").WriteLine()
 		// 处理 import
 		collect := newImportCollect()
 		collect.Set("srpc", "github.com/aundis/srpc")
-		collect.Set("meta", "github.com/aundis/meta")
 		collect.Set("service", e.module+"/internal/service")
+		if isSlotStruct(st) {
+			collect.Set("meta", "github.com/aundis/meta")
+		}
 		if structNeedImportJson(st) {
 			collect.Set("json", "encoding/json")
 		}
@@ -161,16 +168,19 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 		if err != nil {
 			return err
 		}
+		writer.WriteEmptyLine()
 		collect.Emit(writer)
 		// emit
 		err = emitStruct(writer, st)
 		if err != nil {
 			return err
 		}
-		// helper
-		err := emitSlotHelper(e.root, e.module, writer, st)
-		if err != nil {
-			return err
+		// helper, listen 不需要生成helper
+		if isSlotStruct(st) {
+			err := emitSlotHelper(e.root, e.module, writer, st)
+			if err != nil {
+				return err
+			}
 		}
 		filename := path.Join(e.outDir, toSnakeCase(st.Name[1:])+".go")
 		err = ioutil.WriteFile(filename, writer.Bytes(), fs.ModePerm)
@@ -224,6 +234,7 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 		// }
 		if len(f.Params) > 1 {
 			reqStructName := firstLower(st.Name[1:]) + f.Name + "Request"
+			writer.WriteEmptyLine()
 			writer.WriteString("type ", reqStructName, " struct {").WriteLine().IncreaseIndent()
 			for i, p := range f.Params {
 				if i == 0 {
@@ -238,6 +249,7 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 	}
 
 	contollerName := firstLower(st.Name[1:]) + "Controller"
+	writer.WriteEmptyLine()
 	writer.WriteString("var ", contollerName, " = ", "map[string]srpc.ControllerHandle {").WriteLine().IncreaseIndent()
 	// 这里面放请求方法
 
@@ -283,7 +295,7 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 			writer.WriteString(" := ")
 		}
 		// service.XXX().(ctx
-		writer.WriteString("service.", st.Name[1:], "(). ", f.Name, "(ctx")
+		writer.WriteString("service.", st.Name[1:], "().", f.Name, "(ctx")
 		paramIndex := 1
 		if len(f.Params) > 1 {
 			for i, v := range f.Params {

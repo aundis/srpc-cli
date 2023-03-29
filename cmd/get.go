@@ -16,6 +16,8 @@ import (
 
 // Version implements the Version cmd.
 type Get struct {
+	Service  string `flag:"s" help:"listen output logic dir"`
+	FileName string `flag:"f" help:"listen output file name"`
 }
 
 func (g *Get) Name() string      { return "get" }
@@ -35,7 +37,7 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return errors.New("缺少参数")
+		return errors.New("missing argument")
 	}
 	if len(args) != 2 {
 		return errors.New("argument error, e.g. [call/listen] [target[@object]]")
@@ -65,10 +67,12 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 				if err != nil {
 					return err
 				}
-				// fmt.Printf("get call %s declaration\n", v.Name)
 			}
 		}
 	} else if kind == "listen" {
+		if len(g.Service) == 0 {
+			return errors.New("not set service dir name")
+		}
 		if !strings.Contains(args[1], "@") {
 			return errors.New("argument error, e.g. target@object")
 		}
@@ -90,7 +94,7 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 			return fmt.Errorf("match object to more")
 		}
 		ometa := list[0]
-		err = emit.EmitListenFromHelper(dir, target, &ometa)
+		err = emit.EmitListenFromHelper(dir, target, g.Service, g.FileName, &ometa)
 		if err != nil {
 			return err
 		}

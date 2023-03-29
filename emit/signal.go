@@ -79,6 +79,7 @@ func (e *signalEmiter) emit() error {
 	}
 	// 生成头部信息
 	writer := e.writer
+	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package emit").WriteLine()
 	collect := newImportCollect()
 	collect.Set("context", "context")
@@ -92,6 +93,7 @@ func (e *signalEmiter) emit() error {
 			return err
 		}
 	}
+	writer.WriteEmptyLine()
 	collect.Emit(e.writer)
 	// 生成代码内容
 	for _, it := range interfaceTypes {
@@ -108,6 +110,7 @@ func (e *signalEmiter) emit() error {
 		}
 	}
 	// helper 合并
+	writer.WriteEmptyLine()
 	writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
 	for _, it := range interfaceTypes {
 		writer.WriteString(firstLower(it.Name[1:]), "Helper,").WriteLine()
@@ -127,13 +130,16 @@ func emitSignalInterface(writer TextWriter, target string, it *parse.InterfaceTy
 		return formatError(it.Parent.FileSet, it.Pos, "interface name must start with an \"I\"")
 	}
 	structName := "c" + it.Name[1:]
+	writer.WriteEmptyLine()
 	writer.WriteString("type ", structName, " struct {}").WriteLine()
 	// 写出变量
+	writer.WriteEmptyLine()
 	writer.WriteString("var ", firstUpper(it.Name[1:]), " ", it.Name, " = ", "&"+structName+"{}").WriteLine()
 	for _, fun := range it.Functions {
 		// 先生成返回类型的结构体, 如果有返回值的话
 		responseStructName := firstLower(fun.Name) + "Response"
 		if len(fun.Results) > 1 {
+			writer.WriteEmptyLine()
 			writer.WriteString("type ", responseStructName, " struct {").WriteLine().IncreaseIndent()
 			for i, r := range fun.Results {
 				if i == len(fun.Results)-1 {
@@ -146,6 +152,7 @@ func emitSignalInterface(writer TextWriter, target string, it *parse.InterfaceTy
 		}
 
 		// writer.WriteString(fmt.Sprintf("func (c *%s) %s (", structName, m.Name))
+		writer.WriteEmptyLine()
 		writer.WriteString("func (c *", structName, ") ", fun.Name, " (")
 		// 写参数
 		for i, p := range fun.Params {

@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
 	"time"
 )
 
@@ -108,7 +109,7 @@ func Run(ctx context.Context, app Application, args []string) error {
 		app.DetailedHelp(s)
 	}
 	p := addFlags(s, reflect.StructField{}, reflect.ValueOf(app))
-	s.Parse(args)
+	s.Parse(pretreatmentArgs(args))
 
 	if p != nil && p.CPU != "" {
 		f, err := os.Create(p.CPU)
@@ -150,6 +151,26 @@ func Run(ctx context.Context, app Application, args []string) error {
 	}
 
 	return app.Run(ctx, s.Args()...)
+}
+
+// e.g.
+//  in  sr get listen abc@Box -s person -f abc.go
+// out  sr get -s person -f abc.go listen abc@Box
+func pretreatmentArgs(args []string) []string {
+	var result []string
+	first := -1
+	for i, v := range args {
+		if strings.Contains(v, "-") {
+			first = i
+			break
+		}
+	}
+	if first == -1 {
+		return args
+	}
+	result = append(result, args[first:]...)
+	result = append(result, args[:first]...)
+	return result
 }
 
 // addFlags scans fields of structs recursively to find things with flag tags
