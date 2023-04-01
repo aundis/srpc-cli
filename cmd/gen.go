@@ -44,8 +44,10 @@ func (g *Gen) Run(_ context.Context, args ...string) error {
 		err = emit.EmitSignal(dir)
 	case "call":
 		err = emit.EmitCall(dir)
+	case "listen":
+		err = emit.EmitListen(dir)
 	default:
-		return fmt.Errorf("argument %s not in [call/slot/signal]", args[0])
+		return fmt.Errorf("argument %s not in [call/signal/slot/listen]", args[0])
 	}
 	if err != nil {
 		return err

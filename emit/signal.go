@@ -1,6 +1,7 @@
 package emit
 
 import (
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
@@ -22,6 +23,22 @@ func EmitSignal(root string) error {
 		writer: newTextWriter(),
 	}
 	err = emiter.emit()
+	if err != nil {
+		return err
+	}
+	// 写emit.go
+	writer := newTextWriter()
+	writer.WriteString(generatedHeader).WriteLine()
+	writer.WriteString("package srpc").WriteLine()
+	has, err := hasGoFile(path.Join(root, "internal", "srpc", "emit"))
+	if err != nil {
+		return err
+	}
+	if has {
+		writer.WriteEmptyLine()
+		writer.WriteString("import _ \"", module, "/internal/srpc/emit\"").WriteLine()
+	}
+	err = ioutil.WriteFile(path.Join(root, "internal", "srpc", "emit.go"), writer.Bytes(), fs.ModePerm)
 	if err != nil {
 		return err
 	}
@@ -87,6 +104,7 @@ func (e *signalEmiter) emit() error {
 	collect.Set("srpc", "github.com/aundis/srpc")
 	collect.Set("meta", "github.com/aundis/meta")
 	collect.Set("service", e.module+"/internal/service")
+	collect.Set("manager", e.module+"/internal/srpc/manager")
 	for _, it := range interfaceTypes {
 		err = resolveInterfaceImports(it, collect)
 		if err != nil {
@@ -103,19 +121,16 @@ func (e *signalEmiter) emit() error {
 		}
 	}
 	// helper 放到文件内容尾部
+	writer.WriteEmptyLine()
+	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
 	for _, it := range interfaceTypes {
 		err = emitSignalHelper(e.root, e.module, writer, it)
 		if err != nil {
 			return err
 		}
 	}
-	// helper 合并
-	writer.WriteEmptyLine()
-	writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
-	for _, it := range interfaceTypes {
-		writer.WriteString(firstLower(it.Name[1:]), "Helper,").WriteLine()
-	}
 	writer.DecreaseIndent().WriteString("}").WriteLine()
+	// 写出文件
 	err = ioutil.WriteFile(outPath, writer.Bytes(), os.ModePerm)
 	if err != nil {
 		return err

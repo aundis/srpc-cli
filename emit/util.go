@@ -12,6 +12,9 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/aundis/meta"
+	"github.com/gogf/gf/v2/os/gfile"
 )
 
 var generatedHeader = `// ==========================================================================
@@ -178,4 +181,50 @@ func toSnakeCase(str string) string {
 	snake := matchFirstCap.ReplaceAllString(str, "${1}_${2}") //拆分出连续大写
 	snake = matchAllCap.ReplaceAllString(snake, "${1}_${2}")  //拆分单词
 	return strings.ToLower(snake)                             //全部转小写
+}
+
+func getImportMetaExport(imeta *meta.ImportMeta) string {
+	if len(imeta.Alias) > 0 {
+		return imeta.Alias
+	}
+	index := strings.LastIndex(imeta.Path, "/") + 1
+	return imeta.Path[index:]
+}
+
+type refExpr struct {
+	scope string
+	name  string
+}
+
+func getRefExprs(v string) []refExpr {
+	if strings.Index(v, ".") == -1 {
+		return nil
+	}
+
+	var result []refExpr
+	reg := regexp.MustCompile(`\b(\w+)\b\.\b(\w+)\b`)
+	match := reg.FindAllStringSubmatch(v, -1)
+	for _, v := range match {
+		result = append(result, refExpr{
+			scope: v[1],
+			name:  v[2],
+		})
+	}
+	return result
+}
+
+func hasGoFile(dir string) (bool, error) {
+	if !gfile.Exists(dir) {
+		return false, nil
+	}
+	files, err := listFile(dir)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range files {
+		if stringEndOf(f, ".go") {
+			return true, nil
+		}
+	}
+	return false, nil
 }

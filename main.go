@@ -16,6 +16,7 @@ var commands = []Application{
 	&cmd.Get{},
 	&cmd.Ols{},
 	&cmd.Fls{},
+	&cmd.Version{},
 }
 
 func main() {

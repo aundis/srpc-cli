@@ -61,15 +61,18 @@ func resolveFieldImports(file *parse.File, fields []*parse.Field, collect *impor
 		if len(expr) == 0 {
 			continue
 		}
-		if !isUsePackage(expr) {
+		refs := getRefExprs(expr)
+		if len(refs) == 0 {
 			continue
 		}
-		name := getPackageName(expr)
-		imp := resolveImport(file, name)
-		if imp == nil {
-			return formatError(file.FileSet, field.Pos, "not found import "+name)
+		for _, v := range refs {
+			imp := resolveImport(file, v.scope)
+			if imp == nil {
+				return formatError(file.FileSet, field.Pos, "not found import "+v.scope)
+			}
+			collect.Set(imp.Export, imp.Path)
 		}
-		collect.Set(imp.Export, imp.Path)
+		// name := getPackageName(expr)
 	}
 	return nil
 }

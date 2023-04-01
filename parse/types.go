@@ -54,10 +54,11 @@ type Function struct {
 }
 
 type Field struct {
-	Pos  token.Pos
-	Name string
-	Type string
-	Tag  Tag
+	Pos     token.Pos
+	Name    string
+	Type    string
+	TypeRaw interface{}
+	Tag     Tag
 }
 
 type Import struct {

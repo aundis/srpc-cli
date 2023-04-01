@@ -87,6 +87,7 @@ func parseStructType(content []byte, spec *ast.TypeSpec) *StructType {
 			}
 			if cur.Type != nil {
 				field.Type = string(content[cur.Type.Pos()-1 : cur.Type.End()-1])
+				field.TypeRaw = cur.Type
 			}
 			if cur.Tag != nil {
 				field.Tag = Tag(cur.Tag.Value)
@@ -143,9 +144,10 @@ func parseFunctionParamAndResult(content []byte, funType *ast.FuncType) (params 
 			tpe := string(content[p.Type.Pos()-1 : p.Type.End()-1])
 			for _, n := range p.Names {
 				params = append(params, &Field{
-					Pos:  n.Pos(),
-					Name: n.Name,
-					Type: tpe,
+					Pos:     n.Pos(),
+					Name:    n.Name,
+					Type:    tpe,
+					TypeRaw: p.Type,
 				})
 			}
 		}
@@ -156,15 +158,17 @@ func parseFunctionParamAndResult(content []byte, funType *ast.FuncType) (params 
 			tpe := string(content[r.Type.Pos()-1 : r.Type.End()-1])
 			if len(r.Names) == 0 {
 				results = append(results, &Field{
-					Pos:  r.Pos(),
-					Type: tpe,
+					Pos:     r.Pos(),
+					Type:    tpe,
+					TypeRaw: r.Type,
 				})
 			} else {
 				for _, n := range r.Names {
 					results = append(results, &Field{
-						Pos:  n.Pos(),
-						Name: n.Name,
-						Type: tpe,
+						Pos:     n.Pos(),
+						Name:    n.Name,
+						Type:    tpe,
+						TypeRaw: r.Type,
 					})
 				}
 			}

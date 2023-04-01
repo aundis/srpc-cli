@@ -16,8 +16,6 @@ import (
 
 // Version implements the Version cmd.
 type Get struct {
-	Service  string `flag:"s" help:"listen output logic dir"`
-	FileName string `flag:"f" help:"listen output file name"`
 }
 
 func (g *Get) Name() string      { return "get" }
@@ -70,9 +68,6 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 			}
 		}
 	} else if kind == "listen" {
-		if len(g.Service) == 0 {
-			return errors.New("not set service dir name")
-		}
 		if !strings.Contains(args[1], "@") {
 			return errors.New("argument error, e.g. target@object")
 		}
@@ -94,7 +89,7 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 			return fmt.Errorf("match object to more")
 		}
 		ometa := list[0]
-		err = emit.EmitListenFromHelper(dir, target, g.Service, g.FileName, &ometa)
+		err = emit.EmitListenInterfaceFromHelper(dir, target, &ometa)
 		if err != nil {
 			return err
 		}

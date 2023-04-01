@@ -10,18 +10,6 @@ import (
 	"strings"
 )
 
-var mergeMapsFunc = `// overwriting duplicate keys, you should handle that if there is a need
-func mergeMaps(maps ...map[string]srpc.ControllerHandle) map[string]srpc.ControllerHandle {
-	result := make(map[string]srpc.ControllerHandle)
-	for _, m := range maps {
-		for k, v := range m {
-			result[k] = v
-		}
-	}
-	return result
-}
-`
-
 func EmitSlot(root string) error {
 	// 取项目模块名
 	module, err := getProjectModuleName(root)
@@ -69,37 +57,54 @@ func (e *slotEmiter) emit() error {
 			return err
 		}
 	}
-	// 生成 slot.go
+
 	writer := newTextWriter()
 	writer.WriteString(generatedHeader).WriteLine()
-	writer.WriteString("package slot").WriteLine()
-	writer.WriteEmptyLine()
-	writer.WriteString("import \"github.com/aundis/srpc\"").WriteLine()
-	writer.WriteString("import \"github.com/aundis/meta\"").WriteLine()
-	writer.WriteEmptyLine()
-	writer.WriteString(mergeMapsFunc).WriteLine()
-	// 合并所有的controller
-	writer.WriteString("var Controllers = mergeMaps(").WriteLine().IncreaseIndent()
-	for _, st := range e.targetStructs {
-		name := firstLower(st.Name[1:])
-		writer.WriteString(name+"Controller", ",").WriteLine()
-	}
-	writer.DecreaseIndent().WriteString(")").WriteLine()
-	// 合并所有的helper
-	writer.WriteEmptyLine()
-	writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
-	for _, st := range e.targetStructs {
-		if !isSlotStruct(st) {
-			continue
-		}
-		name := firstLower(st.Name[1:])
-		writer.WriteString(name+"Helper", ",").WriteLine()
-	}
-	writer.DecreaseIndent().WriteString("}").WriteLine()
-	err = ioutil.WriteFile(path.Join(e.root, "internal", "srpc", "slot", "slot.go"), writer.Bytes(), fs.ModePerm)
+	writer.WriteString("package srpc").WriteLine()
+	has, err := hasGoFile(path.Join(e.root, "internal", "srpc", "slot"))
 	if err != nil {
 		return err
 	}
+	if has {
+		writer.WriteEmptyLine()
+		writer.WriteString("import _ \"", e.module, "/internal/srpc/slot\"").WriteLine()
+	}
+	err = ioutil.WriteFile(path.Join(e.root, "internal", "srpc", "slot.go"), writer.Bytes(), fs.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	// 生成 slot.go
+	// writer := newTextWriter()
+	// writer.WriteString(generatedHeader).WriteLine()
+	// writer.WriteString("package slot").WriteLine()
+	// writer.WriteEmptyLine()
+	// writer.WriteString("import \"github.com/aundis/srpc\"").WriteLine()
+	// writer.WriteString("import \"github.com/aundis/meta\"").WriteLine()
+	// writer.WriteEmptyLine()
+	// writer.WriteString(mergeMapsFunc).WriteLine()
+	// // 合并所有的controller
+	// writer.WriteString("var Controllers = mergeMaps(").WriteLine().IncreaseIndent()
+	// for _, st := range e.targetStructs {
+	// 	name := firstLower(st.Name[1:])
+	// 	writer.WriteString(name+"Controller", ",").WriteLine()
+	// }
+	// writer.DecreaseIndent().WriteString(")").WriteLine()
+	// // 合并所有的helper
+	// writer.WriteEmptyLine()
+	// writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
+	// for _, st := range e.targetStructs {
+	// 	if !isSlotStruct(st) {
+	// 		continue
+	// 	}
+	// 	name := firstLower(st.Name[1:])
+	// 	writer.WriteString(name+"Helper", ",").WriteLine()
+	// }
+	// writer.DecreaseIndent().WriteString("}").WriteLine()
+	// err = ioutil.WriteFile(path.Join(e.root, "internal", "srpc", "slot", "slot.go"), writer.Bytes(), fs.ModePerm)
+	// if err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
@@ -156,8 +161,9 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 		writer.WriteString("package slot").WriteLine()
 		// 处理 import
 		collect := newImportCollect()
-		collect.Set("srpc", "github.com/aundis/srpc")
+		// collect.Set("srpc", "github.com/aundis/srpc")
 		collect.Set("service", e.module+"/internal/service")
+		collect.Set("manager", e.module+"/internal/srpc/manager")
 		if isSlotStruct(st) {
 			collect.Set("meta", "github.com/aundis/meta")
 		}
@@ -171,16 +177,9 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 		writer.WriteEmptyLine()
 		collect.Emit(writer)
 		// emit
-		err = emitStruct(writer, st)
+		err = e.emitStruct(writer, st)
 		if err != nil {
 			return err
-		}
-		// helper, listen 不需要生成helper
-		if isSlotStruct(st) {
-			err := emitSlotHelper(e.root, e.module, writer, st)
-			if err != nil {
-				return err
-			}
 		}
 		filename := path.Join(e.outDir, toSnakeCase(st.Name[1:])+".go")
 		err = ioutil.WriteFile(filename, writer.Bytes(), fs.ModePerm)
@@ -224,7 +223,7 @@ func filterNoExport(list []*parse.Function) []*parse.Function {
 	return result
 }
 
-func emitStruct(writer TextWriter, st *parse.StructType) error {
+func (e *slotEmiter) emitStruct(writer TextWriter, st *parse.StructType) error {
 	// 生成结构方法的参数结构体
 	for _, f := range st.Functions {
 		// 请求结构体
@@ -248,20 +247,19 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 		}
 	}
 
-	contollerName := firstLower(st.Name[1:]) + "Controller"
 	writer.WriteEmptyLine()
-	writer.WriteString("var ", contollerName, " = ", "map[string]srpc.ControllerHandle {").WriteLine().IncreaseIndent()
+	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
 	// 这里面放请求方法
-
 	for _, f := range st.Functions {
-		writer.WriteString(`"`)
+		action := ""
+		// writer.WriteString(`"`)
 		if isListenStruct(st) {
 			target := getListenTarget(st)
-			writer.WriteString(target + "@" + st.Name[1:] + "." + f.Name)
+			action = target + "@" + st.Name[1:] + "." + f.Name
 		} else {
-			writer.WriteString(st.Name[1:] + "." + f.Name)
+			action = st.Name[1:] + "." + f.Name
 		}
-		writer.WriteString(`": `, "func (ctx context.Context, req []byte) (res interface{}, err error) {").WriteLine().IncreaseIndent()
+		writer.WriteString(`manager.AddController("`, action, `", func(ctx context.Context, req []byte) (res interface{}, err error) {`).WriteLine().IncreaseIndent()
 
 		// 	var params *ParamStruct
 		// 	err = json.Unmarshal(req, &params)
@@ -334,7 +332,16 @@ func emitStruct(writer TextWriter, st *parse.StructType) error {
 		}
 		writer.DecreaseIndent().WriteString("}").WriteLine()
 		writer.WriteString("return").WriteLine()
-		writer.DecreaseIndent().WriteString("},").WriteLine()
+		writer.DecreaseIndent().WriteString("})").WriteLine()
+	}
+
+	if isSlotStruct(st) {
+		// writer.WriteEmptyLine()
+		writer.WriteString("// Object Helper").WriteLine()
+		err := emitSlotHelper(e.root, e.module, writer, st)
+		if err != nil {
+			return err
+		}
 	}
 	writer.DecreaseIndent().WriteString("}").WriteLine()
 	return nil

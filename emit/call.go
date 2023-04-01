@@ -1,6 +1,7 @@
 package emit
 
 import (
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
@@ -33,6 +34,25 @@ func EmitCall(root string) error {
 			return err
 		}
 	}
+	// 生成初始化文件
+	writer := newTextWriter()
+	writer.WriteString(generatedHeader).WriteLine()
+	writer.WriteString("package srpc").WriteString().WriteLine()
+	writer.WriteEmptyLine()
+	for _, dir := range dirs {
+		base := path.Base(dir)
+		has, err := hasGoFile(path.Join(dir, "call"))
+		if err != nil {
+			return err
+		}
+		if has {
+			writer.WriteString("import _ \"", module, "/internal/srpc/service/", base, `/call"`).WriteLine()
+		}
+	}
+	err = ioutil.WriteFile(path.Join(root, "internal", "srpc", "call.go"), writer.Bytes(), fs.ModePerm)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -53,7 +73,7 @@ func emitCallDir(root, module string, dir string) error {
 	}
 	var goFiles []string
 	for _, v := range files {
-		if path.Ext(v) == ".go" {
+		if stringEndOf(v, ".call.go") {
 			goFiles = append(goFiles, v)
 		}
 	}
@@ -176,7 +196,7 @@ func (e *callStructEmiter) emitBody() error {
 	writer.WriteString("type ", structName, " struct {}").WriteLine()
 	for _, fun := range it.Functions {
 		// 先生成返回类型的结构体, 如果有返回值的话
-		responseStructName := firstLower(fun.Name) + "Response"
+		responseStructName := firstLower(e.target) + it.Name[1:] + fun.Name + "Response"
 		if len(fun.Results) > 1 {
 			writer.WriteEmptyLine()
 			writer.WriteString("type ", responseStructName, " struct {").WriteLine().IncreaseIndent()

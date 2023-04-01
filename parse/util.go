@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"go/ast"
 	"io/ioutil"
 	"path"
 	"runtime"
@@ -36,4 +37,16 @@ func listFile(dirname string, deep ...bool) ([]string, error) {
 		}
 	}
 	return list, nil
+}
+
+func IsFuncType(v interface{}) bool {
+	switch v.(type) {
+	case *ast.FuncType:
+		return true
+	}
+	return false
+}
+
+func ParseFuncType(content []byte, v interface{}) (params []*Field, results []*Field) {
+	return parseFunctionParamAndResult(content, v.(*ast.FuncType))
 }

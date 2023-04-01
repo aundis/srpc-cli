@@ -48,8 +48,7 @@ type helperEmiter struct {
 
 func (e *helperEmiter) emitHelperRest(file *parse.File, name, kind string, funcs []*parse.Function) error {
 	writer := e.writer
-	writer.WriteEmptyLine()
-	writer.WriteString("var ", firstLower(name), "Helper = meta.ObjectMeta{").WriteLine().IncreaseIndent()
+	writer.WriteString("manager.AddObjectMetaHelper(meta.ObjectMeta{").WriteLine().IncreaseIndent()
 	writer.WriteString(`Name: "`, name, `",`).WriteLine()
 	writer.WriteString(`Kind: "`, kind, `",`).WriteLine()
 	writer.WriteString(`Functions: []*meta.FunctionMeta{`).WriteLine().IncreaseIndent()
@@ -81,7 +80,7 @@ func (e *helperEmiter) emitHelperRest(file *parse.File, name, kind string, funcs
 		writer.DecreaseIndent().WriteString("},").WriteLine()
 	}
 	writer.DecreaseIndent().WriteString("},").WriteLine()
-	writer.DecreaseIndent().WriteString("}").WriteLine()
+	writer.DecreaseIndent().WriteString("})").WriteLine()
 	return nil
 }
 
@@ -241,7 +240,7 @@ func (e *callInterfaceEmiter) emit() error {
 	if err != nil {
 		return err
 	}
-	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+".go")
+	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+".call.go")
 	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
 	if err != nil {
 		return err
@@ -351,8 +350,8 @@ func (e *callInterfaceEmiter) emitBody() error {
 	writer.WriteString("var local", e.ometa.Name, " I", e.ometa.Name).WriteLine()
 	writer.WriteEmptyLine()
 	writer.WriteString("func ", e.ometa.Name, "() I", e.ometa.Name, "{").WriteLine().IncreaseIndent()
-	writer.WriteString("if localSort == nil {").IncreaseIndent()
-	writer.WriteString(`panic("implement not found for interface I`, e.ometa.Name, `, forgot register?")`)
+	writer.WriteString("if local", e.ometa.Name, " == nil {").WriteLine().IncreaseIndent()
+	writer.WriteString(`panic("implement not found for interface I`, e.ometa.Name, `, forgot register?")`).WriteLine()
 	writer.DecreaseIndent().WriteString("}").WriteLine()
 	writer.WriteString("return local", e.ometa.Name).WriteLine()
 	writer.DecreaseIndent().WriteString("}").WriteLine()
@@ -392,25 +391,17 @@ func (e *callInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 	return nil
 }
 
-func EmitListenFromHelper(root, target, service, filename string, ometa *meta.ObjectMeta) error {
+func EmitListenInterfaceFromHelper(root string, target string, ometa *meta.ObjectMeta) error {
 	module, err := getProjectModuleName(root)
 	if err != nil {
 		return err
 	}
-	if len(filename) == 0 {
-		filename = toSnakeCase(ometa.Name) + ".go"
-	}
-	if !stringEndOf(filename, ".go") {
-		filename += ".go"
-	}
-	emiter := &listenStructEmiter{
-		root:     root,
-		target:   target,
-		service:  service,
-		filename: filename,
-		ometa:    ometa,
-		module:   module,
-		writer:   newTextWriter(),
+	emiter := &listenInterfaceEmiter{
+		root:   root,
+		target: target,
+		ometa:  ometa,
+		module: module,
+		writer: newTextWriter(),
 	}
 	err = emiter.emit()
 	if err != nil {
@@ -419,17 +410,15 @@ func EmitListenFromHelper(root, target, service, filename string, ometa *meta.Ob
 	return nil
 }
 
-type listenStructEmiter struct {
-	root     string
-	target   string
-	service  string
-	filename string
-	ometa    *meta.ObjectMeta
-	module   string
-	writer   TextWriter
+type listenInterfaceEmiter struct {
+	root   string
+	target string
+	ometa  *meta.ObjectMeta
+	module string
+	writer TextWriter
 }
 
-func (e *listenStructEmiter) emit() error {
+func (e *listenInterfaceEmiter) emit() error {
 	err := e.emitHeader()
 	if err != nil {
 		return err
@@ -443,12 +432,12 @@ func (e *listenStructEmiter) emit() error {
 		return err
 	}
 
-	outDir := path.Join(e.root, "internal", "srpc")
+	outDir := path.Join(e.root, "internal", "srpc", "service", e.target)
 	err = ensureDirExist(outDir)
 	if err != nil {
 		return err
 	}
-	outPath := path.Join(e.root, "internal", "logic", e.service, e.filename)
+	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+".listen.go")
 	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
 	if err != nil {
 		return err
@@ -456,10 +445,9 @@ func (e *listenStructEmiter) emit() error {
 	return nil
 }
 
-func (e *listenStructEmiter) emitHeader() error {
+func (e *listenInterfaceEmiter) emitHeader() error {
 	e.writer.WriteString(generatedHeader).WriteLine()
-	e.writer.WriteString("package ", e.service).WriteLine()
-	e.writer.WriteEmptyLine()
+	e.writer.WriteString("package ", e.target).WriteLine()
 	err := e.emitImports()
 	if err != nil {
 		return err
@@ -467,15 +455,13 @@ func (e *listenStructEmiter) emitHeader() error {
 	return nil
 }
 
-func (e *listenStructEmiter) emitImports() error {
+func (e *listenInterfaceEmiter) emitImports() error {
 	collect := newImportCollect()
 	var fmetas []*meta.FieldMeta
 	for _, f := range e.ometa.Functions {
 		fmetas = append(fmetas, f.Parameters...)
 		fmetas = append(fmetas, f.Results...)
 	}
-	collect.Set("service", e.module+"/internal/service")
-	collect.Set("meta", "github.com/aundis/meta")
 	for _, fmeta := range fmetas {
 		for _, imp := range fmeta.Imports {
 			if len(imp.Alias) != 0 {
@@ -485,16 +471,16 @@ func (e *listenStructEmiter) emitImports() error {
 			}
 		}
 		if len(fmeta.Raws) > 0 {
-			importPath := e.module + "/internal/srpc/service/" + e.target
-			fmeta.Type = strings.ReplaceAll(fmeta.Type, "{scope}", e.target)
-			collect.Set(e.target, importPath)
+			fmeta.Type = strings.ReplaceAll(fmeta.Type, "{scope}.", "")
+			// collect.Set(e.target, e.module+"/internal/srpc/model/"+e.target)
 		}
 	}
+	e.writer.WriteEmptyLine()
 	collect.Emit(e.writer)
 	return nil
 }
 
-func (e *listenStructEmiter) emitRaw() error {
+func (e *listenInterfaceEmiter) emitRaw() error {
 	var rmetas []*meta.CodeMeta
 	var fmetas []*meta.FieldMeta
 	for _, f := range e.ometa.Functions {
@@ -534,30 +520,48 @@ func (e *listenStructEmiter) emitRaw() error {
 	return nil
 }
 
-func (e *listenStructEmiter) emitBody() error {
+func (e *listenInterfaceEmiter) emitBody() error {
 	ometa := e.ometa
 	writer := e.writer
 	writer.WriteEmptyLine()
-	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
-	writer.WriteString("service.Register", ometa.Name, "(&s", ometa.Name, "{})").WriteLine()
-	writer.DecreaseIndent().WriteString("}").WriteLine()
-	writer.WriteString("type s", ometa.Name, " struct {").WriteLine().IncreaseIndent()
-	writer.WriteString("meta.Listen `target:\"", e.target, "\"`").WriteLine()
-	writer.DecreaseIndent().WriteString("}").WriteLine()
+	writer.WriteString("type I", ometa.Name, " interface {").WriteLine().IncreaseIndent()
 	for _, fmeta := range ometa.Functions {
 		err := e.emitFunction(fmeta)
 		if err != nil {
 			return err
 		}
 	}
+	writer.DecreaseIndent().WriteString("}").WriteLine()
 
+	// var localMath IMath
+	// func Math() IMath {
+	// 	if localSort == nil {
+	// 		panic("implement not found for interface IMath, forgot register?")
+	// 	}
+	// 	return localMath
+	// }
+	// func RegisterMath(i IMath) {
+	// 	localMath = i
+	// }
+	writer.WriteEmptyLine()
+	writer.WriteString("var local", e.ometa.Name, " I", e.ometa.Name).WriteLine()
+	writer.WriteEmptyLine()
+	writer.WriteString("func ", e.ometa.Name, "() I", e.ometa.Name, "{").WriteLine().IncreaseIndent()
+	writer.WriteString("if local", e.ometa.Name, " == nil {").WriteLine().IncreaseIndent()
+	writer.WriteString(`panic("implement not found for interface I`, e.ometa.Name, `, forgot register?")`).WriteLine()
+	writer.DecreaseIndent().WriteString("}").WriteLine()
+	writer.WriteString("return local", e.ometa.Name).WriteLine()
+	writer.DecreaseIndent().WriteString("}").WriteLine()
+	writer.WriteEmptyLine()
+	writer.WriteString("func Register", e.ometa.Name, "(i I", e.ometa.Name, ") {").WriteLine().IncreaseIndent()
+	writer.WriteString("local", e.ometa.Name, " = i").WriteLine()
+	writer.DecreaseIndent().WriteString("}").WriteLine()
 	return nil
 }
 
-func (e *listenStructEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
+func (e *listenInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 	writer := e.writer
-	writer.WriteEmptyLine()
-	writer.WriteString("func (s *s", e.ometa.Name, ") ", fmeta.Name, "(")
+	writer.WriteString("On", fmeta.Name, "(fun func(")
 	for i, p := range fmeta.Parameters {
 		if i != 0 {
 			writer.WriteString(", ")
@@ -580,16 +584,7 @@ func (e *listenStructEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 	if len(fmeta.Results) > 0 {
 		writer.WriteString(")")
 	}
-	writer.WriteString(" {").WriteLine().IncreaseIndent()
-	writer.WriteString("return nil").WriteLine()
-	writer.DecreaseIndent().WriteString("}").WriteLine()
+	writer.WriteString(")")
+	writer.WriteLine()
 	return nil
-}
-
-func getImportMetaExport(imeta *meta.ImportMeta) string {
-	if len(imeta.Alias) > 0 {
-		return imeta.Alias
-	}
-	index := strings.LastIndex(imeta.Path, "/") + 1
-	return imeta.Path[index:]
 }

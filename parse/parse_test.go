@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -190,4 +191,19 @@ func TestParseContent(t *testing.T) {
 			return
 		}
 	}
+}
+
+func TestParseFunctionType(t *testing.T) {
+	f, err := ParseContent("test.go", []byte(`
+	package main
+
+	type person struct {
+		callback func (ctx context.Context, a, b int) (error)
+	}
+	`))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	fmt.Println(f)
 }
