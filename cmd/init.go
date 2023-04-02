@@ -64,7 +64,9 @@ func (i *Init) build(root string) (err error) {
 				return err
 			}
 		} else {
-			err = util.WriteGenerateFile(i.replaceGoFileName(out), i.replaceVariables(gres.GetContent(f.Name())), root)
+			outFileName := i.replaceGoFileName(out)
+			content := i.replaceVariables(gres.GetContent(f.Name()))
+			err = util.WriteGenerateFile(outFileName, content, root)
 			if err != nil {
 				return err
 			}
