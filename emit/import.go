@@ -32,7 +32,7 @@ func (c *importCollect) Get(name string) string {
 	return c.imports[name]
 }
 
-func (c *importCollect) Emit(writer TextWriter) {
+func (c *importCollect) Emit(writer util.TextWriter) {
 	for name, path := range c.imports {
 		if util.StringEndOf(path, name) {
 			writer.WriteString(`import "` + path + `"`)

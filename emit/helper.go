@@ -14,7 +14,7 @@ import (
 	"github.com/gogf/gf/v2/os/gfile"
 )
 
-func emitSlotHelper(root, module string, writer TextWriter, st *parse.StructType) error {
+func emitSlotHelper(root, module string, writer util.TextWriter, st *parse.StructType) error {
 	emiter := helperEmiter{
 		root:   root,
 		module: module,
@@ -27,7 +27,7 @@ func emitSlotHelper(root, module string, writer TextWriter, st *parse.StructType
 	return nil
 }
 
-func emitSignalHelper(root, module string, writer TextWriter, it *parse.InterfaceType) error {
+func emitSignalHelper(root, module string, writer util.TextWriter, it *parse.InterfaceType) error {
 	emiter := helperEmiter{
 		root:   root,
 		module: module,
@@ -43,7 +43,7 @@ func emitSignalHelper(root, module string, writer TextWriter, it *parse.Interfac
 type helperEmiter struct {
 	root   string
 	module string
-	writer TextWriter
+	writer util.TextWriter
 }
 
 func (e *helperEmiter) emitHelperRest(file *parse.File, name, kind string, funcs []*parse.Function) error {
@@ -84,7 +84,7 @@ func (e *helperEmiter) emitHelperRest(file *parse.File, name, kind string, funcs
 	return nil
 }
 
-func (e *helperEmiter) emitFiledHelper(writer TextWriter, fmeta *meta.FieldMeta) error {
+func (e *helperEmiter) emitFiledHelper(writer util.TextWriter, fmeta *meta.FieldMeta) error {
 	writer.WriteString("{").WriteLine().IncreaseIndent()
 	writer.WriteString(`Name: "`, fmeta.Name, `",`).WriteLine()
 	writer.WriteString(`Kind: "`, fmeta.Kind, `",`).WriteLine()
@@ -204,7 +204,7 @@ func EmitCallInterfaceFromHelper(root string, target string, ometa *meta.ObjectM
 		target: target,
 		ometa:  ometa,
 		module: module,
-		writer: newTextWriter(),
+		writer: util.NewTextWriter(),
 	}
 	err = emiter.emit()
 	if err != nil {
@@ -218,7 +218,7 @@ type callInterfaceEmiter struct {
 	target string
 	ometa  *meta.ObjectMeta
 	module string
-	writer TextWriter
+	writer util.TextWriter
 }
 
 func (e *callInterfaceEmiter) emit() error {
@@ -308,7 +308,7 @@ func (e *callInterfaceEmiter) emitRaw() error {
 	for _, rmeta := range rmetas {
 		model.AddType(rmeta.Name, []byte(rmeta.Code))
 	}
-	writer := newTextWriter()
+	writer := util.NewTextWriter()
 	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package ", e.target).WriteLine()
 	for _, v := range model.Types {
@@ -401,7 +401,7 @@ func EmitListenInterfaceFromHelper(root string, target string, ometa *meta.Objec
 		target: target,
 		ometa:  ometa,
 		module: module,
-		writer: newTextWriter(),
+		writer: util.NewTextWriter(),
 	}
 	err = emiter.emit()
 	if err != nil {
@@ -415,7 +415,7 @@ type listenInterfaceEmiter struct {
 	target string
 	ometa  *meta.ObjectMeta
 	module string
-	writer TextWriter
+	writer util.TextWriter
 }
 
 func (e *listenInterfaceEmiter) emit() error {
@@ -505,7 +505,7 @@ func (e *listenInterfaceEmiter) emitRaw() error {
 	for _, rmeta := range rmetas {
 		model.AddType(rmeta.Name, []byte(rmeta.Code))
 	}
-	writer := newTextWriter()
+	writer := util.NewTextWriter()
 	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package ", e.target).WriteLine()
 	for _, v := range model.Types {

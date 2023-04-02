@@ -1,4 +1,4 @@
-package emit
+package util
 
 import (
 	"bytes"
@@ -32,7 +32,7 @@ type textWriter struct {
 	linePos   int
 }
 
-func newTextWriter() TextWriter {
+func NewTextWriter() TextWriter {
 	return &textWriter{
 		newLine:   "\n",
 		indent:    0,

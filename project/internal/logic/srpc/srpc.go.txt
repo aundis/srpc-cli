@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+  "strings"
 	"time"
 
 	"github.com/aundis/meta"

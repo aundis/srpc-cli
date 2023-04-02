@@ -16,14 +16,14 @@ func EmitSignal(root string) error {
 	emiter := signalEmiter{
 		root:   root,
 		module: module,
-		writer: newTextWriter(),
+		writer: util.NewTextWriter(),
 	}
 	err = emiter.emit()
 	if err != nil {
 		return err
 	}
 	// 写emit.go
-	writer := newTextWriter()
+	writer := util.NewTextWriter()
 	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package srpc").WriteLine()
 	has, err := hasGoFile(path.Join(root, "internal", "srpc", "emit"))
@@ -44,7 +44,7 @@ func EmitSignal(root string) error {
 type signalEmiter struct {
 	root   string
 	module string
-	writer TextWriter
+	writer util.TextWriter
 }
 
 func (e *signalEmiter) emit() error {

@@ -6,8 +6,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"regexp"
@@ -15,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/gogf/gf/v2/os/gfile"
+	"github.com/gogf/gf/v2/os/gproc"
 	"github.com/gogf/gf/v2/os/gres"
 )
 
@@ -47,6 +50,14 @@ func (i *Init) Run(ctx context.Context, args ...string) error {
 	}
 	i.variable["module-name"] = module
 	err = i.build(root)
+	if err != nil {
+		return err
+	}
+	err = i.goGetModules(ctx)
+	if err != nil {
+		return err
+	}
+	err = i.appendSrpcConfig(root)
 	if err != nil {
 		return err
 	}
@@ -94,4 +105,40 @@ func (i *Init) replaceGoFileName(name string) string {
 		return strings.ReplaceAll(name, ".go.txt", ".go")
 	}
 	return name
+}
+
+func (i *Init) goGetModules(ctx context.Context) (err error) {
+	if err = gproc.ShellRun(ctx, "go get github.com/aundis/meta@latest"); err != nil {
+		return err
+	}
+	if err = gproc.ShellRun(ctx, "go get github.com/aundis/srpc@latest"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (i *Init) appendSrpcConfig(root string) error {
+	filename := path.Join(root, "manifest", "config", "config.yaml")
+	if !gfile.Exists(filename) {
+		return errors.New("config.yaml file not exists")
+	}
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	// already exists srpc config
+	if strings.Contains(string(data), "srpc:") {
+		return nil
+	}
+	writer := util.NewTextWriter()
+	writer.Write(data)
+	writer.WriteString("srpc:").WriteLine().IncreaseIndent()
+	writer.WriteString("name: 'xxx'").WriteLine()
+	writer.WriteString(`address: 'ws://localhost:8000'`).WriteLine()
+	writer.WriteString(`maxReconnect: 0`).WriteLine()
+	err = ioutil.WriteFile(filename, writer.Bytes(), os.ModePerm)
+	if err != nil {
+		return err
+	}
+	return nil
 }

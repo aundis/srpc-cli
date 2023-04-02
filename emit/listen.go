@@ -32,7 +32,7 @@ func EmitListen(root string) error {
 		}
 	}
 	// 生成初始化文件
-	writer := newTextWriter()
+	writer := util.NewTextWriter()
 	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package srpc").WriteString().WriteLine()
 	writer.WriteEmptyLine()
@@ -109,7 +109,7 @@ func emitListenDir(root, module string, dir string) error {
 
 func emitListenStruct(root, module, target string, it *parse.InterfaceType) error {
 	e := &listenStructEmiter{
-		writer: newTextWriter(),
+		writer: util.NewTextWriter(),
 		root:   root,
 		module: module,
 		target: target,
@@ -123,7 +123,7 @@ type listenStructEmiter struct {
 	module string
 	target string
 	it     *parse.InterfaceType
-	writer TextWriter
+	writer util.TextWriter
 }
 
 func (e *listenStructEmiter) emit() error {

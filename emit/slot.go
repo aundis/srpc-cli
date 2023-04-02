@@ -57,7 +57,7 @@ func (e *slotEmiter) emit() error {
 		}
 	}
 
-	writer := newTextWriter()
+	writer := util.NewTextWriter()
 	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package srpc").WriteLine()
 	has, err := hasGoFile(path.Join(e.root, "internal", "srpc", "slot"))
@@ -144,7 +144,7 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 	}
 	// 开始生成代码, 一个结构体对应一个文件
 	for _, st := range e.targetStructs {
-		writer := newTextWriter()
+		writer := util.NewTextWriter()
 		writer.WriteString(generatedHeader).WriteLine()
 		writer.WriteString("package slot").WriteLine()
 		// 处理 import
@@ -211,7 +211,7 @@ func (e *slotEmiter) filterNoExport(list []*parse.Function) []*parse.Function {
 	return result
 }
 
-func (e *slotEmiter) emitStruct(writer TextWriter, st *parse.StructType) error {
+func (e *slotEmiter) emitStruct(writer util.TextWriter, st *parse.StructType) error {
 	// 生成结构方法的参数结构体
 	for _, f := range st.Functions {
 		// 请求结构体

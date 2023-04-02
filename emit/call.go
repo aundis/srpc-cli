@@ -31,7 +31,7 @@ func EmitCall(root string) error {
 		}
 	}
 	// 生成初始化文件
-	writer := newTextWriter()
+	writer := util.NewTextWriter()
 	writer.WriteString(generatedHeader).WriteLine()
 	writer.WriteString("package srpc").WriteString().WriteLine()
 	writer.WriteEmptyLine()
@@ -112,7 +112,7 @@ func emitCallDir(root, module string, dir string) error {
 
 func emitCallStruct(root, module, target string, it *parse.InterfaceType) error {
 	e := &callStructEmiter{
-		writer: newTextWriter(),
+		writer: util.NewTextWriter(),
 		root:   root,
 		module: module,
 		target: target,
@@ -126,7 +126,7 @@ type callStructEmiter struct {
 	module string
 	target string
 	it     *parse.InterfaceType
-	writer TextWriter
+	writer util.TextWriter
 }
 
 func (e *callStructEmiter) emit() error {
