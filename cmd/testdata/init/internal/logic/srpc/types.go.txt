@@ -1,0 +1,18 @@
+package srpc
+
+type ObjectHelperMate struct {
+	Kind      string                `json:"kind"`
+	Name      string                `json:"name"`
+	Functions []*FunctionHelperMate `json:"functions"`
+}
+
+type FunctionHelperMate struct {
+	Name     string `json:"name"`
+	TypeKind string `json:"typeKind"`
+	Data     string `json:"data"`
+}
+
+type helperListInput struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}

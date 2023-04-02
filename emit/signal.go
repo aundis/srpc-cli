@@ -1,14 +1,10 @@
 package emit
 
 import (
-	"io/fs"
-	"io/ioutil"
-	"os"
 	"path"
 	"sr/parse"
+	"sr/util"
 	"strconv"
-
-	"github.com/gogf/gf/v2/os/gfile"
 )
 
 func EmitSignal(root string) error {
@@ -38,7 +34,7 @@ func EmitSignal(root string) error {
 		writer.WriteEmptyLine()
 		writer.WriteString("import _ \"", module, "/internal/srpc/emit\"").WriteLine()
 	}
-	err = ioutil.WriteFile(path.Join(root, "internal", "srpc", "emit.go"), writer.Bytes(), fs.ModePerm)
+	err = util.WriteGenerateFile(path.Join(root, "internal", "srpc", "emit.go"), writer.Bytes(), root)
 	if err != nil {
 		return err
 	}
@@ -57,13 +53,10 @@ func (e *signalEmiter) emit() error {
 	if err != nil {
 		return err
 	}
-	// 删除历史生成的文件
-	outPath := path.Join(dir, "generate.go")
-	if gfile.Exists(outPath) {
-		err = os.Remove(outPath)
-		if err != nil {
-			return err
-		}
+	// 删除生成的文件
+	err = util.RemoveGenerateFiles(dir)
+	if err != nil {
+		return err
 	}
 	// 获取待处理的Go文件
 	files, err := listFile(dir)
@@ -106,7 +99,7 @@ func (e *signalEmiter) emit() error {
 	collect.Set("service", e.module+"/internal/service")
 	collect.Set("manager", e.module+"/internal/srpc/manager")
 	for _, it := range interfaceTypes {
-		err = resolveInterfaceImports(it, collect)
+		err = resolveInterfaceImports(it, collect, e.root)
 		if err != nil {
 			return err
 		}
@@ -115,7 +108,7 @@ func (e *signalEmiter) emit() error {
 	collect.Emit(e.writer)
 	// 生成代码内容
 	for _, it := range interfaceTypes {
-		err = emitSignalInterface(e.writer, "main", it)
+		err = e.emitSignalInterface("main", it)
 		if err != nil {
 			return err
 		}
@@ -131,18 +124,20 @@ func (e *signalEmiter) emit() error {
 	}
 	writer.DecreaseIndent().WriteString("}").WriteLine()
 	// 写出文件
-	err = ioutil.WriteFile(outPath, writer.Bytes(), os.ModePerm)
+	outPath := path.Join(dir, "generate.go")
+	err = util.WriteGenerateFile(outPath, writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func emitSignalInterface(writer TextWriter, target string, it *parse.InterfaceType) error {
+func (e *signalEmiter) emitSignalInterface(target string, it *parse.InterfaceType) error {
+	writer := e.writer
 	// 首先生成接口的结构体
 	// 接口的名称需要I开头
 	if string(it.Name[0]) != "I" {
-		return formatError(it.Parent.FileSet, it.Pos, "interface name must start with an \"I\"")
+		return formatError(it.Parent.FileSet, it.Pos, "interface name must start with an \"I\"", e.root)
 	}
 	structName := "c" + it.Name[1:]
 	writer.WriteEmptyLine()
@@ -174,10 +169,10 @@ func emitSignalInterface(writer TextWriter, target string, it *parse.InterfaceTy
 			// 首参数校验
 			if i == 0 {
 				if p.Name != "ctx" {
-					return formatError(it.Parent.FileSet, p.Pos, "first param name must is ctx")
+					return formatError(it.Parent.FileSet, p.Pos, "first param name must is ctx", e.root)
 				}
 				if p.Type != "context.Context" {
-					return formatError(it.Parent.FileSet, p.Pos, "first param type must is context.Context")
+					return formatError(it.Parent.FileSet, p.Pos, "first param type must is context.Context", e.root)
 				}
 			}
 			if i != 0 {
@@ -194,17 +189,17 @@ func emitSignalInterface(writer TextWriter, target string, it *parse.InterfaceTy
 		writer.WriteString(")")
 		// 写返回值
 		if len(fun.Results) == 0 {
-			return formatError(it.Parent.FileSet, fun.Pos, "method must provide a return value of type error")
+			return formatError(it.Parent.FileSet, fun.Pos, "method must provide a return value of type error", e.root)
 		}
 		if len(fun.Results) > 1 {
-			return formatError(it.Parent.FileSet, fun.Pos, "signal method can only have one return value")
+			return formatError(it.Parent.FileSet, fun.Pos, "signal method can only have one return value", e.root)
 		}
 		writer.WriteString(" (")
 		for i, r := range fun.Results {
 			// 校验最后一个返回类型
 			if i == len(fun.Results)-1 {
 				if r.Type != "error" {
-					return formatError(it.Parent.FileSet, fun.Pos, "method last return value must be error")
+					return formatError(it.Parent.FileSet, fun.Pos, "method last return value must be error", e.root)
 				}
 			}
 			if i != 0 {

@@ -1,15 +1,11 @@
 package emit
 
 import (
-	"io/fs"
-	"io/ioutil"
-	"os"
 	"path"
 	"regexp"
 	"sr/parse"
+	"sr/util"
 	"strconv"
-
-	"github.com/gogf/gf/v2/os/gfile"
 )
 
 func EmitCall(root string) error {
@@ -49,7 +45,7 @@ func EmitCall(root string) error {
 			writer.WriteString("import _ \"", module, "/internal/srpc/service/", base, `/call"`).WriteLine()
 		}
 	}
-	err = ioutil.WriteFile(path.Join(root, "internal", "srpc", "call.go"), writer.Bytes(), fs.ModePerm)
+	err = util.WriteGenerateFile(path.Join(root, "internal", "srpc", "call.go"), writer.Bytes(), root)
 	if err != nil {
 		return err
 	}
@@ -60,12 +56,16 @@ func emitCallDir(root, module string, dir string) error {
 	base := path.Base(dir)
 	// 删除历史生成的目录
 	outPath := path.Join(dir, "call")
-	if gfile.Exists(outPath) {
-		err := gfile.Remove(outPath)
-		if err != nil {
-			return err
-		}
+	err := util.RemoveGenerateFiles(outPath)
+	if err != nil {
+		return err
 	}
+	// if gfile.Exists(outPath) {
+	// 	err := gfile.Remove(outPath)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// }
 	// 获取待处理的Go文件
 	files, err := listFile(dir)
 	if err != nil {
@@ -73,7 +73,7 @@ func emitCallDir(root, module string, dir string) error {
 	}
 	var goFiles []string
 	for _, v := range files {
-		if stringEndOf(v, ".call.go") {
+		if util.StringEndOf(v, ".call.go") {
 			goFiles = append(goFiles, v)
 		}
 	}
@@ -145,7 +145,7 @@ func (e *callStructEmiter) emit() error {
 		return err
 	}
 	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, "call", toSnakeCase(e.it.Name[1:])+".go")
-	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
+	err = util.WriteGenerateFile(outPath, e.writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}
@@ -170,7 +170,7 @@ func (e *callStructEmiter) emitImports() error {
 	collect.Set("srpc", "github.com/aundis/srpc")
 	collect.Set("service", e.module+"/internal/service")
 	collect.Set(e.target, e.module+"/internal/srpc/service/"+e.target)
-	err := resolveInterfaceImports(e.it, collect)
+	err := resolveInterfaceImports(e.it, collect, e.root)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func (e *callStructEmiter) emitBody() error {
 	// 首先生成接口的结构体
 	// 接口的名称需要I开头
 	if string(it.Name[0]) != "I" {
-		return formatError(it.Parent.FileSet, it.Pos, "interface name must start with an \"I\"")
+		return formatError(it.Parent.FileSet, it.Pos, "interface name must start with an \"I\"", e.root)
 	}
 	structName := "c" + it.Name[1:]
 	writer.WriteEmptyLine()
@@ -218,10 +218,10 @@ func (e *callStructEmiter) emitBody() error {
 			// 首参数校验
 			if i == 0 {
 				if p.Name != "ctx" {
-					return formatError(it.Parent.FileSet, p.Pos, "first param name must is ctx")
+					return formatError(it.Parent.FileSet, p.Pos, "first param name must is ctx", e.root)
 				}
 				if p.Type != "context.Context" {
-					return formatError(it.Parent.FileSet, p.Pos, "first param type must is context.Context")
+					return formatError(it.Parent.FileSet, p.Pos, "first param type must is context.Context", e.root)
 				}
 			}
 			if i != 0 {
@@ -238,14 +238,14 @@ func (e *callStructEmiter) emitBody() error {
 		writer.WriteString(")")
 		// 写返回值
 		if len(fun.Results) == 0 {
-			return formatError(it.Parent.FileSet, fun.Pos, "method must provide a return value of type error")
+			return formatError(it.Parent.FileSet, fun.Pos, "method must provide a return value of type error", e.root)
 		}
 		writer.WriteString(" (")
 		for i, r := range fun.Results {
 			// 校验最后一个返回类型
 			if i == len(fun.Results)-1 {
 				if r.Type != "error" {
-					return formatError(it.Parent.FileSet, fun.Pos, "method last return value must be error")
+					return formatError(it.Parent.FileSet, fun.Pos, "method last return value must be error", e.root)
 				}
 			}
 			if i != 0 {

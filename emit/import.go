@@ -2,7 +2,7 @@ package emit
 
 import (
 	"sr/parse"
-	"strings"
+	"sr/util"
 )
 
 func resolveImport(file *parse.File, packageName string) *parse.Import {
@@ -34,7 +34,7 @@ func (c *importCollect) Get(name string) string {
 
 func (c *importCollect) Emit(writer TextWriter) {
 	for name, path := range c.imports {
-		if stringEndOf(path, name) {
+		if util.StringEndOf(path, name) {
 			writer.WriteString(`import "` + path + `"`)
 		} else {
 			writer.WriteString("import " + name + ` "` + path + `"`)
@@ -43,19 +43,15 @@ func (c *importCollect) Emit(writer TextWriter) {
 	}
 }
 
-func stringEndOf(content string, part string) bool {
-	return strings.LastIndex(content, part) == len(content)-len(part)
+func resolveStructImports(st *parse.StructType, collect *importCollect, root string) error {
+	return resolveFieldImports(st.Parent, getStructFields(st), collect, root)
 }
 
-func resolveStructImports(st *parse.StructType, collect *importCollect) error {
-	return resolveFieldImports(st.Parent, getStructFields(st), collect)
+func resolveInterfaceImports(it *parse.InterfaceType, collect *importCollect, root string) error {
+	return resolveFieldImports(it.Parent, getInterfaceFields(it), collect, root)
 }
 
-func resolveInterfaceImports(it *parse.InterfaceType, collect *importCollect) error {
-	return resolveFieldImports(it.Parent, getInterfaceFields(it), collect)
-}
-
-func resolveFieldImports(file *parse.File, fields []*parse.Field, collect *importCollect) error {
+func resolveFieldImports(file *parse.File, fields []*parse.Field, collect *importCollect, root string) error {
 	for _, field := range fields {
 		expr := field.Type
 		if len(expr) == 0 {
@@ -68,7 +64,7 @@ func resolveFieldImports(file *parse.File, fields []*parse.Field, collect *impor
 		for _, v := range refs {
 			imp := resolveImport(file, v.scope)
 			if imp == nil {
-				return formatError(file.FileSet, field.Pos, "not found import "+v.scope)
+				return formatError(file.FileSet, field.Pos, "not found import "+v.scope, root)
 			}
 			collect.Set(imp.Export, imp.Path)
 		}

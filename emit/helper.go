@@ -3,11 +3,11 @@ package emit
 import (
 	"fmt"
 	"go/token"
-	"io/ioutil"
 	"os"
 	"path"
 	"regexp"
 	"sr/parse"
+	"sr/util"
 	"strings"
 
 	"github.com/aundis/meta"
@@ -127,7 +127,7 @@ func (e *helperEmiter) resolveFieldMeta(module string, file *parse.File, name, t
 			typeName := results[i][2]
 			imp := resolveImport(file, scope)
 			if imp == nil {
-				return nil, formatError(file.FileSet, pos, fmt.Sprintf("cannot parse scope:%s, please place the local type under the model package", scope))
+				return nil, formatError(file.FileSet, pos, fmt.Sprintf("cannot parse scope:%s, please place the local type under the model package", scope), e.root)
 			}
 			if isProjectPackage(module, imp.Path) {
 				// raw
@@ -241,7 +241,7 @@ func (e *callInterfaceEmiter) emit() error {
 		return err
 	}
 	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+".call.go")
-	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
+	err = util.WriteGenerateFile(outPath, e.writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func (e *callInterfaceEmiter) emitRaw() error {
 		writer.Write(v)
 		writer.WriteLine()
 	}
-	err = ioutil.WriteFile(modelPath, writer.Bytes(), os.ModePerm)
+	err = util.WriteGenerateFile(modelPath, writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}
@@ -438,7 +438,7 @@ func (e *listenInterfaceEmiter) emit() error {
 		return err
 	}
 	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+".listen.go")
-	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
+	err = util.WriteGenerateFile(outPath, e.writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}
@@ -513,7 +513,7 @@ func (e *listenInterfaceEmiter) emitRaw() error {
 		writer.Write(v)
 		writer.WriteLine()
 	}
-	err = ioutil.WriteFile(modelPath, writer.Bytes(), os.ModePerm)
+	err = util.WriteGenerateFile(modelPath, writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}

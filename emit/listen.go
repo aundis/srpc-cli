@@ -2,15 +2,11 @@ package emit
 
 import (
 	"go/ast"
-	"io/fs"
-	"io/ioutil"
-	"os"
 	"path"
 	"regexp"
 	"sr/parse"
+	"sr/util"
 	"strconv"
-
-	"github.com/gogf/gf/v2/os/gfile"
 )
 
 func EmitListen(root string) error {
@@ -50,7 +46,7 @@ func EmitListen(root string) error {
 			writer.WriteString("import _ \"", module, "/internal/srpc/service/", base, `/listen"`).WriteLine()
 		}
 	}
-	err = ioutil.WriteFile(path.Join(root, "internal", "srpc", "listen.go"), writer.Bytes(), fs.ModePerm)
+	err = util.WriteGenerateFile(path.Join(root, "internal", "srpc", "listen.go"), writer.Bytes(), root)
 	if err != nil {
 		return err
 	}
@@ -59,13 +55,10 @@ func EmitListen(root string) error {
 
 func emitListenDir(root, module string, dir string) error {
 	base := path.Base(dir)
-	// 删除历史生成的目录
-	outPath := path.Join(dir, "call")
-	if gfile.Exists(outPath) {
-		err := gfile.Remove(outPath)
-		if err != nil {
-			return err
-		}
+	// 删除历史生成的文件
+	err := util.RemoveGenerateFiles(path.Join(dir, "listen"))
+	if err != nil {
+		return err
 	}
 	// 获取待处理的Go文件
 	files, err := listFile(dir)
@@ -74,7 +67,7 @@ func emitListenDir(root, module string, dir string) error {
 	}
 	var goFiles []string
 	for _, v := range files {
-		if stringEndOf(v, ".listen.go") {
+		if util.StringEndOf(v, ".listen.go") {
 			goFiles = append(goFiles, v)
 		}
 	}
@@ -149,7 +142,7 @@ func (e *listenStructEmiter) emit() error {
 		return err
 	}
 	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, "listen", toSnakeCase(e.it.Name[1:])+".go")
-	err = ioutil.WriteFile(outPath, e.writer.Bytes(), os.ModePerm)
+	err = util.WriteGenerateFile(outPath, e.writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}
@@ -176,7 +169,7 @@ func (e *listenStructEmiter) emitImports() error {
 	collect.Set("manager", e.module+"/internal/srpc/manager")
 	collect.Set("garray", "github.com/gogf/gf/v2/container/garray")
 	collect.Set(e.target, e.module+"/internal/srpc/service/"+e.target)
-	err := resolveInterfaceImports(e.it, collect)
+	err := resolveInterfaceImports(e.it, collect, e.root)
 	if err != nil {
 		return err
 	}
@@ -189,27 +182,27 @@ func (e *listenStructEmiter) emitBody() error {
 	var paramAndResultArr []paramAndResult
 	for _, fun := range e.it.Functions {
 		if len(fun.Name) < 2 || string(fun.Name[:2]) != "On" {
-			return formatError(e.it.Parent.FileSet, fun.Pos, "listen interface function name must start with On")
+			return formatError(e.it.Parent.FileSet, fun.Pos, "listen interface function name must start with On", e.root)
 		}
 		if len(fun.Params) != 1 {
-			return formatError(e.it.Parent.FileSet, fun.Pos, "listen interface function params count must be 1")
+			return formatError(e.it.Parent.FileSet, fun.Pos, "listen interface function params count must be 1", e.root)
 		}
 		if !parse.IsFuncType(fun.Params[0].TypeRaw) {
-			return formatError(e.it.Parent.FileSet, fun.Params[0].Pos, "listen interface function first params type must be function type")
+			return formatError(e.it.Parent.FileSet, fun.Params[0].Pos, "listen interface function first params type must be function type", e.root)
 		}
 		funcType := fun.Params[0].TypeRaw.(*ast.FuncType)
 		params, results := parse.ParseFuncType(e.it.Parent.Content, funcType)
 		if len(params) == 0 {
-			return formatError(e.it.Parent.FileSet, funcType.Pos(), "the function type has at least one parameter")
+			return formatError(e.it.Parent.FileSet, funcType.Pos(), "the function type has at least one parameter", e.root)
 		}
 		if params[0].Type != "context.Context" {
-			return formatError(e.it.Parent.FileSet, funcType.Pos(), "the function type first param type must be context.Context")
+			return formatError(e.it.Parent.FileSet, funcType.Pos(), "the function type first param type must be context.Context", e.root)
 		}
 		if len(results) == 0 {
-			return formatError(e.it.Parent.FileSet, funcType.Pos(), "the function type must has a return type")
+			return formatError(e.it.Parent.FileSet, funcType.Pos(), "the function type must has a return type", e.root)
 		}
 		if results[0].Type != "error" {
-			return formatError(e.it.Parent.FileSet, results[0].Pos, "the function type first return type must be error")
+			return formatError(e.it.Parent.FileSet, results[0].Pos, "the function type first return type must be error", e.root)
 		}
 		paramAndResultArr = append(paramAndResultArr, paramAndResult{
 			params:  params,

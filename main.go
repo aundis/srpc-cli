@@ -9,9 +9,12 @@ import (
 	"sr/cmd"
 	"strings"
 	"text/template"
+
+	_ "sr/packed"
 )
 
 var commands = []Application{
+	&cmd.Init{},
 	&cmd.Gen{},
 	&cmd.Get{},
 	&cmd.Ols{},

@@ -11,6 +11,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"sr/util"
 	"strings"
 
 	"github.com/aundis/meta"
@@ -36,10 +37,14 @@ func firstLower(s string) string {
 	return strings.ToLower(string(s[0])) + s[1:]
 }
 
-func formatError(fset *token.FileSet, pos token.Pos, message string) error {
+func formatError(fset *token.FileSet, pos token.Pos, message string, root ...string) error {
 	// emit\util.go:21:1: missing return
 	p := fset.Position(pos)
-	return errors.New(fmt.Sprintf("%s:%d:%d: %s", p.Filename, p.Line, p.Column, message))
+	filename := p.Filename
+	if len(root) > 0 {
+		filename = util.TryConvRelPath(root[0], filename)
+	}
+	return errors.New(fmt.Sprintf("%s:%d:%d: %s", filename, p.Line, p.Column, message))
 }
 
 func listFile(dirname string, deep ...bool) ([]string, error) {
@@ -153,6 +158,9 @@ func command(arg ...string) error {
 
 func getProjectModuleName(dir string) (string, error) {
 	fileName := path.Join(dir, "go.mod")
+	if !gfile.Exists(fileName) {
+		return "", errors.New("not found go.mod")
+	}
 	data, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return "", nil
@@ -222,7 +230,7 @@ func hasGoFile(dir string) (bool, error) {
 		return false, err
 	}
 	for _, f := range files {
-		if stringEndOf(f, ".go") {
+		if util.StringEndOf(f, ".go") {
 			return true, nil
 		}
 	}

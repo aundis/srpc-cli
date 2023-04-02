@@ -2,10 +2,9 @@ package emit
 
 import (
 	"fmt"
-	"io/fs"
-	"io/ioutil"
 	"path"
 	"sr/parse"
+	"sr/util"
 	"strconv"
 	"strings"
 )
@@ -47,7 +46,7 @@ func (e *slotEmiter) emit() error {
 		return err
 	}
 	// 清空输出目录下的Go文件
-	err = removeDirFiles(outDir)
+	err = util.RemoveGenerateFiles(outDir)
 	if err != nil {
 		return err
 	}
@@ -69,7 +68,7 @@ func (e *slotEmiter) emit() error {
 		writer.WriteEmptyLine()
 		writer.WriteString("import _ \"", e.module, "/internal/srpc/slot\"").WriteLine()
 	}
-	err = ioutil.WriteFile(path.Join(e.root, "internal", "srpc", "slot.go"), writer.Bytes(), fs.ModePerm)
+	err = util.WriteGenerateFile(path.Join(e.root, "internal", "srpc", "slot.go"), writer.Bytes(), e.root)
 	if err != nil {
 		return err
 	}
@@ -131,23 +130,12 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 			continue
 		}
 		if isSlotStruct(st) {
-			st.Functions = filterNoExport(st.Functions)
+			st.Functions = e.filterNoExport(st.Functions)
 			if len(st.Functions) == 0 {
 				continue
 			}
 			e.targetStructs = append(e.targetStructs, st)
 			continue
-		}
-		if isListenStruct(st) {
-			st.Functions = filterNoExport(st.Functions)
-			if len(st.Functions) == 0 {
-				continue
-			}
-			target := getListenTarget(st)
-			if len(target) == 0 {
-				return formatError(st.Parent.FileSet, st.Pos, "not set listen object")
-			}
-			e.targetStructs = append(e.targetStructs, st)
 		}
 	}
 	// 无内容则不生成
@@ -170,7 +158,7 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 		if structNeedImportJson(st) {
 			collect.Set("json", "encoding/json")
 		}
-		err = resolveStructImports(st, collect)
+		err = resolveStructImports(st, collect, e.root)
 		if err != nil {
 			return err
 		}
@@ -182,7 +170,7 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 			return err
 		}
 		filename := path.Join(e.outDir, toSnakeCase(st.Name[1:])+".go")
-		err = ioutil.WriteFile(filename, writer.Bytes(), fs.ModePerm)
+		err = util.WriteGenerateFile(filename, writer.Bytes(), e.root)
 		if err != nil {
 			return err
 		}
@@ -199,7 +187,7 @@ func structNeedImportJson(st *parse.StructType) bool {
 	return false
 }
 
-func filterNoExport(list []*parse.Function) []*parse.Function {
+func (e *slotEmiter) filterNoExport(list []*parse.Function) []*parse.Function {
 	var result []*parse.Function
 	for _, v := range list {
 		if len(v.Name) == 0 {
@@ -210,12 +198,12 @@ func filterNoExport(list []*parse.Function) []*parse.Function {
 		}
 		// 首个参数必须为 context.Context
 		if len(v.Params) == 0 || v.Params[0].Type != "context.Context" {
-			fmt.Println("warning: " + formatError(v.Parent.FileSet, v.Pos, "first paramater type not context.Context, ignore method "+v.Name).Error())
+			fmt.Println("warning: " + formatError(v.Parent.FileSet, v.Pos, "first paramater type not context.Context, ignore method "+v.Name, e.root).Error())
 			continue
 		}
 		// 最后一个返回值必须为error
 		if len(v.Results) == 0 || v.Results[len(v.Results)-1].Type != "error" {
-			fmt.Println("warning: " + formatError(v.Parent.FileSet, v.Pos, "last return value type not error, ignore method "+v.Name).Error())
+			fmt.Println("warning: " + formatError(v.Parent.FileSet, v.Pos, "last return value type not error, ignore method "+v.Name, e.root).Error())
 			continue
 		}
 		result = append(result, v)
@@ -251,14 +239,7 @@ func (e *slotEmiter) emitStruct(writer TextWriter, st *parse.StructType) error {
 	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
 	// 这里面放请求方法
 	for _, f := range st.Functions {
-		action := ""
-		// writer.WriteString(`"`)
-		if isListenStruct(st) {
-			target := getListenTarget(st)
-			action = target + "@" + st.Name[1:] + "." + f.Name
-		} else {
-			action = st.Name[1:] + "." + f.Name
-		}
+		action := st.Name[1:] + "." + f.Name
 		writer.WriteString(`manager.AddController("`, action, `", func(ctx context.Context, req []byte) (res interface{}, err error) {`).WriteLine().IncreaseIndent()
 
 		// 	var params *ParamStruct
@@ -354,22 +335,4 @@ func isSlotStruct(tpe *parse.StructType) bool {
 		}
 	}
 	return false
-}
-
-func isListenStruct(tpe *parse.StructType) bool {
-	for _, v := range tpe.Fields {
-		if v.Type == "meta.Listen" {
-			return true
-		}
-	}
-	return false
-}
-
-func getListenTarget(tpe *parse.StructType) string {
-	for _, v := range tpe.Fields {
-		if v.Type == "meta.Listen" {
-			return v.Tag.Get("target")
-		}
-	}
-	return ""
 }

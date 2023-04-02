@@ -1,0 +1,127 @@
+package srpc
+
+import (
+	"{{module-name}}/internal/service"
+	"{{module-name}}/internal/srpc/manager"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/aundis/meta"
+	"github.com/aundis/srpc"
+	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/net/gclient"
+	"github.com/gogf/gf/v2/os/gctx"
+)
+
+func init() {
+	s := newSrpc()
+	service.RegisterSrpc(s)
+	go s.run(gctx.New())
+}
+
+const NOT_CONNECT_ERR = "srpc client not connect"
+
+type sSrpc struct {
+	client *srpc.Client
+}
+
+func newSrpc() *sSrpc {
+	return &sSrpc{}
+}
+
+func (s *sSrpc) run(ctx context.Context) {
+	name, addr, maxCount, err := readConfig(ctx)
+	if err != nil {
+		panic(err)
+	}
+	count := 0
+	for {
+		client := gclient.NewWebSocket()
+		conn, _, err := client.Dial(addr+fmt.Sprintf("?name=%s&listens=%s", name, strings.Join(manager.GetListenNames(), ",")), http.Header{})
+		if err != nil {
+			count++
+			if maxCount != 0 && count > maxCount {
+				g.Log().Errorf(ctx, "srpc reconnect count > max(%d)", maxCount)
+				panic(fmt.Sprintf("srpc reconnect count > max(%d)", maxCount))
+			}
+			g.Log().Error(ctx, "srpc connect to server error:", err)
+			<-time.After(time.Second)
+			continue
+		}
+		count = 0
+		s.client = srpc.NewClient(name, conn)
+		s.client.SetController(manager.GetControllers())
+		s.client.AddController("Helper.list", s.helperController)
+		s.client.Start(ctx)
+	}
+}
+
+func readConfig(ctx context.Context) (name string, addr string, maxCount int, err error) {
+	// 读取配置
+	nameValue, err := g.Cfg().Get(ctx, "srpc.name")
+	if err != nil {
+		err = errors.New("read srpc name error: " + err.Error())
+		return
+	}
+	addrValue, err := g.Cfg().Get(ctx, "srpc.address")
+	if err != nil {
+		err = errors.New("read srpc address error: " + err.Error())
+		return
+	}
+	maxCountValue, err := g.Cfg().Get(ctx, "srpc.maxReconnect")
+	if err != nil {
+		err = errors.New("read srpc maxReconnect error: " + err.Error())
+		return
+	}
+	name = nameValue.String()
+	addr = addrValue.String()
+	maxCount = maxCountValue.Int()
+	return
+}
+
+func (s *sSrpc) Request(ctx context.Context, req srpc.RequestData) ([]byte, error) {
+	if s.client == nil {
+		return nil, errors.New(NOT_CONNECT_ERR)
+	}
+	return s.client.Request(ctx, req)
+}
+
+func (s *sSrpc) Emit(ctx context.Context, action string, arguments ...interface{}) error {
+	return nil
+}
+
+func (s *sSrpc) helperController(ctx context.Context, data []byte) (interface{}, error) {
+	var req *helperListInput
+	err := json.Unmarshal(data, &req)
+	if err != nil {
+		return nil, err
+	}
+
+	var all = manager.GetObjectMetaHelpers()
+
+	var list []meta.ObjectMeta
+	for _, item := range all {
+		if helperMatchCondition(item, req.Kind, req.Name) {
+			list = append(list, item)
+		}
+	}
+
+	res := map[string]interface{}{
+		"list": list,
+	}
+	return res, nil
+}
+
+func helperMatchCondition(item meta.ObjectMeta, kind, name string) bool {
+	if len(kind) > 0 && item.Kind != kind {
+		return false
+	}
+	if len(name) > 0 && item.Name != name {
+		return false
+	}
+	return true
+}

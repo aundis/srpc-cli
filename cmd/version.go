@@ -24,6 +24,6 @@ func (v *Version) DetailedHelp(f *flag.FlagSet) {
 
 // Run prints Version information to stdout.
 func (c *Version) Run(ctx context.Context, args ...string) error {
-	fmt.Println("1.0.0")
+	fmt.Println("1.0.1")
 	return nil
 }
