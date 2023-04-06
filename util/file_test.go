@@ -69,3 +69,17 @@ func TestRemoveGenFiles(t *testing.T) {
 		return
 	}
 }
+
+func TestGetGoFilePackagePath(t *testing.T) {
+	root := `C:\Users\85124\Desktop\abc`
+	filename := `C:\Users\85124\Desktop\abc\internal\model2\model.go`
+	pkg, err := GetGoFilePackagePath(root, "abc", filename)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if pkg != "abc/internal/model2" {
+		t.Errorf("except abc/internal/model2 bug got %s", pkg)
+		return
+	}
+}

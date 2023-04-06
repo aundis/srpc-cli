@@ -8,6 +8,7 @@ import (
 
 type File struct {
 	FileSet        *token.FileSet
+	FileName       string
 	Content        []byte
 	Imports        []*Import
 	InterfaceTypes []*InterfaceType

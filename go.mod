@@ -3,13 +3,13 @@ module sr
 go 1.18
 
 require (
-	github.com/aundis/meta v1.0.5
+	github.com/aundis/meta v1.0.6
+	github.com/aundis/srpc v1.0.5
 	github.com/gogf/gf/v2 v2.3.3
 )
 
 require (
 	github.com/BurntSushi/toml v1.1.0 // indirect
-	github.com/aundis/srpc v1.0.3 // indirect
 	github.com/clbanning/mxj/v2 v2.5.5 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect

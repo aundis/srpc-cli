@@ -24,8 +24,9 @@ func ParseContent(filename string, content []byte) (*File, error) {
 		return nil, err
 	}
 	res := &File{
-		FileSet: fset,
-		Content: content,
+		FileSet:  fset,
+		FileName: filename,
+		Content:  content,
 	}
 	for _, item := range f.Imports {
 		imp := &Import{}
@@ -67,6 +68,9 @@ func ParseContent(filename string, content []byte) (*File, error) {
 	}
 	for _, i := range res.InterfaceTypes {
 		i.Parent = res
+		for _, f := range i.Functions {
+			f.Parent = res
+		}
 	}
 	return res, nil
 }

@@ -50,3 +50,11 @@ func IsFuncType(v interface{}) bool {
 func ParseFuncType(content []byte, v interface{}) (params []*Field, results []*Field) {
 	return parseFunctionParamAndResult(content, v.(*ast.FuncType))
 }
+
+func IsStructType(v interface{}) bool {
+	switch v.(type) {
+	case StructType, *StructType:
+		return true
+	}
+	return false
+}

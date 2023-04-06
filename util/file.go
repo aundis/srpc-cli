@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -126,4 +127,17 @@ func TryConvRelPath(basepath, targetpath string) string {
 		return targetpath
 	}
 	return out
+}
+
+func GetGoFilePackagePath(root string, module string, filename string) (string, error) {
+	pkgPath, err := filepath.Rel(root, filename)
+	if err != nil {
+		return "", err
+	}
+	pkgPath = strings.ReplaceAll(pkgPath, "\\", "/")
+	index := strings.LastIndex(pkgPath, "/")
+	if index == -1 {
+		return "", errors.New("the path is illegal")
+	}
+	return module + "/" + pkgPath[:index], nil
 }

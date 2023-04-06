@@ -14,6 +14,13 @@ func StringEndOf(content string, part string) bool {
 	return strings.LastIndex(content, part) == len(content)-len(part)
 }
 
+func StringStartOf(content string, sub string) bool {
+	if len(content) < len(sub) {
+		return false
+	}
+	return content[:len(sub)] == sub
+}
+
 func GetProjectModuleName(dir string) (string, error) {
 	fileName := path.Join(dir, "go.mod")
 	if !gfile.Exists(fileName) {

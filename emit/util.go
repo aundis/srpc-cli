@@ -11,6 +11,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"sr/parse"
 	"sr/util"
 	"strings"
 
@@ -195,8 +196,12 @@ func getImportMetaExport(imeta *meta.ImportMeta) string {
 	if len(imeta.Alias) > 0 {
 		return imeta.Alias
 	}
-	index := strings.LastIndex(imeta.Path, "/") + 1
-	return imeta.Path[index:]
+	return getImportPathExprot(imeta.Path)
+}
+
+func getImportPathExprot(path string) string {
+	index := strings.LastIndex(path, "/") + 1
+	return path[index:]
 }
 
 type refExpr struct {
@@ -235,4 +240,90 @@ func hasGoFile(dir string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func packagePathToFileName(root, pkgPath string) string {
+	part := strings.Split(pkgPath, "/")
+	return path.Join(root, strings.Join(part[1:], "/"))
+}
+
+func getStructInnerFields(v interface{}) []*parse.Field {
+	switch n := v.(type) {
+	case *parse.StructType:
+		return n.Fields
+	}
+	return nil
+}
+
+func hasCustomerType(in string) bool {
+	arr := getTypeNames(in)
+	for _, v := range arr {
+		if !isBuiltin(v) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBuiltin(in string) bool {
+	builtin := []string{
+		"int",
+		"int8",
+		"int16",
+		"int32",
+		"int64",
+		"uint",
+		"uint8",
+		"uint16",
+		"uint32",
+		"uint64",
+		"bool",
+		"interface",
+		"any",
+		"map",
+		"byte",
+		"rune",
+		"string",
+	}
+	for _, v := range builtin {
+		if v == in {
+			return true
+		}
+	}
+	return false
+}
+
+func getTypeNames(tpe string) []string {
+	var results []string
+	reg := regexp.MustCompile(`\b([\w\.]+)\b`)
+	matchs := reg.FindAllStringSubmatch(tpe, -1)
+	for _, v := range matchs {
+		tar := v[1]
+		if strings.Contains(tar, ".") {
+			results = append(results, tar)
+		} else if tar[0] >= 'A' && tar[0] <= 'Z' {
+			results = append(results, tar)
+		}
+	}
+	return results
+}
+
+func findTypeMetaForId(arr []*meta.TypeMeta, id string) *meta.TypeMeta {
+	for _, v := range arr {
+		if v.Id == id {
+			return v
+		}
+	}
+	return nil
+}
+
+var typeMetaIdReg = regexp.MustCompile(`\{\{(.+?)\}\}`)
+
+func findAllTypeMetaIds(content string) []string {
+	var result []string
+	matchs := typeMetaIdReg.FindAllStringSubmatch(content, -1)
+	for _, v := range matchs {
+		result = append(result, v[1])
+	}
+	return result
 }
