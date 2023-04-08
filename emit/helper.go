@@ -123,6 +123,7 @@ func (e *helperEmiter) emitTypeMetas(typeMetas []*meta.TypeMeta) error {
 		writer.WriteString("{").WriteLine().IncreaseIndent()
 		writer.WriteString(`Id: "`, t.Id, `",`).WriteLine()
 		writer.WriteString(`Name: "`, t.Name, `",`).WriteLine()
+		writer.WriteString(`From: "`, t.From, `",`).WriteLine()
 		writer.WriteString(`Code: "`, formatToCodeString(t.Code), `",`).WriteLine()
 		if t.Import != nil {
 			writer.WriteString(`Import: &meta.ImportMeta{`).WriteLine().IncreaseIndent()
@@ -141,30 +142,20 @@ func (e *helperEmiter) convertPackagePathToLocalPath(pkgPath string) string {
 	return path.Join(e.root, strings.Join(part[1:], "/"))
 }
 
-func formatToCodeString(content string) string {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	content = strings.ReplaceAll(content, "\n", "\\n")
-	content = strings.ReplaceAll(content, `"`, `\"`)
-	return content
-}
-
-func isProjectPackage(module string, path string) bool {
-	return util.StringStartOf(path, module+"/")
-}
-
-func EmitCallInterfaceFromHelper(root string, target string, ometa *meta.ObjectMeta) error {
+func EmitInterfaceFromHelper(root string, target string, ometa *meta.ObjectMeta, kind string) error {
 	module, err := getProjectModuleName(root)
 	if err != nil {
 		return err
 	}
-	emiter := &callInterfaceEmiter{
+	emiter := &helperInterfaceEmiter{
+		kind:      kind,
 		root:      root,
 		target:    target,
 		ometa:     ometa,
 		module:    module,
 		writer:    util.NewTextWriter(),
 		toPackage: fmt.Sprintf("%s/internal/srpc/service/%s", module, target),
-		exportTo:  map[*meta.TypeMeta]string{},
+		exportTo:  map[string]string{},
 	}
 	err = emiter.emit()
 	if err != nil {
@@ -173,19 +164,20 @@ func EmitCallInterfaceFromHelper(root string, target string, ometa *meta.ObjectM
 	return nil
 }
 
-type callInterfaceEmiter struct {
+type helperInterfaceEmiter struct {
+	kind      string
 	root      string
 	target    string
 	ometa     *meta.ObjectMeta
 	module    string
 	writer    util.TextWriter
 	toPackage string
-	exportTo  map[*meta.TypeMeta]string
+	exportTo  map[string]string
 	fmetas    []*meta.FieldMeta
 	tmetas    []*meta.TypeMeta
 }
 
-func (e *callInterfaceEmiter) emit() error {
+func (e *helperInterfaceEmiter) emit() error {
 	e.initMetas()
 	e.redirectTypePackage()
 	err := e.emitHeader()
@@ -206,7 +198,7 @@ func (e *callInterfaceEmiter) emit() error {
 	if err != nil {
 		return err
 	}
-	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+".call.go")
+	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+"."+e.kind+".go")
 	err = util.WriteGenerateFile(outPath, e.writer.Bytes(), e.root)
 	if err != nil {
 		return err
@@ -214,7 +206,7 @@ func (e *callInterfaceEmiter) emit() error {
 	return nil
 }
 
-func (e *callInterfaceEmiter) initMetas() {
+func (e *helperInterfaceEmiter) initMetas() {
 	for _, f := range e.ometa.Functions {
 		e.fmetas = append(e.fmetas, f.Parameters...)
 		e.fmetas = append(e.fmetas, f.Results...)
@@ -224,17 +216,26 @@ func (e *callInterfaceEmiter) initMetas() {
 	}
 }
 
-func (e *callInterfaceEmiter) redirectTypePackage() {
+func (e *helperInterfaceEmiter) redirectTypePackage() {
 	modelPackage := fmt.Sprintf("%s/internal/srpc/service/%s", e.module, e.target)
 	for _, fmeta := range e.fmetas {
 		for _, tmeta := range fmeta.TypeMetas {
-			// TODO: 这里可以重定向类型要存储到哪个包下
-			e.exportTo[tmeta] = modelPackage
+			if isFromOtherService(tmeta.From) {
+				e.exportTo[tmeta.Id] = fmt.Sprintf("%s/internal/srpc/service/%s", e.module, getImportPathExport(tmeta.From))
+			} else {
+				e.exportTo[tmeta.Id] = modelPackage
+			}
 		}
 	}
 }
 
-func (e *callInterfaceEmiter) emitHeader() error {
+var isFromOtherServiceReg = regexp.MustCompile(`internal\/srpc\/service\/(\w+)$`)
+
+func isFromOtherService(path string) bool {
+	return isFromOtherServiceReg.MatchString(path)
+}
+
+func (e *helperInterfaceEmiter) emitHeader() error {
 	e.writer.WriteString(generatedHeader).WriteLine()
 	e.writer.WriteString("package ", e.target).WriteLine()
 	err := e.emitImports()
@@ -244,7 +245,7 @@ func (e *callInterfaceEmiter) emitHeader() error {
 	return nil
 }
 
-func (e *callInterfaceEmiter) emitImports() error {
+func (e *helperInterfaceEmiter) emitImports() error {
 	collect := newImportCollect()
 	var fmetas []*meta.FieldMeta
 	for _, f := range e.ometa.Functions {
@@ -260,9 +261,9 @@ func (e *callInterfaceEmiter) emitImports() error {
 			}
 			if len(tmeta.Code) > 0 {
 				// 不是同一个包的代码片段需要import
-				to := e.exportTo[tmeta]
+				to := e.exportTo[tmeta.Id]
 				if to != currentPackage {
-					collect.Set(getImportPathExprot(to), to)
+					collect.Set(getImportPathExport(to), to)
 				}
 			}
 		}
@@ -272,7 +273,7 @@ func (e *callInterfaceEmiter) emitImports() error {
 	return nil
 }
 
-func (e *callInterfaceEmiter) emitTypeMetas() error {
+func (e *helperInterfaceEmiter) emitTypeMetas() error {
 	// 更改model
 	models := map[*parse.Model]bool{}
 	serviceDir := path.Join(e.root, "internal", "srpc", "service", e.target)
@@ -286,7 +287,8 @@ func (e *callInterfaceEmiter) emitTypeMetas() error {
 		if len(tmeta.Code) == 0 {
 			continue
 		}
-		filename := packagePathToFileName(e.root, e.exportTo[tmeta])
+		modelPackage := e.exportTo[tmeta.Id]
+		filename := packagePathToFileName(e.root, modelPackage)
 		modelFileName := path.Join(filename, "model.go")
 		model, err := parse.ParseFileModel(modelFileName)
 		if err != nil {
@@ -299,12 +301,16 @@ func (e *callInterfaceEmiter) emitTypeMetas() error {
 			if cur.Import != nil {
 				model.AddImport(getImportMetaExport(cur.Import), cur.Import.Path)
 			}
+			if e.exportTo[id] != modelPackage {
+				model.AddImport(getImportPathExport(e.exportTo[id]), e.exportTo[id])
+			}
 		}
 		// 写入类型的代码
 		model.AddType(tmeta.Name, &parse.ModelType{
 			Raw:     nil,
-			Content: []byte(e.replacePseudocodePart(tmeta.Code)),
+			Content: []byte(e.replacePseudocodePart(modelPackage, tmeta.Code)),
 		})
+
 	}
 	// 写出 models
 	for model := range models {
@@ -317,7 +323,7 @@ func (e *callInterfaceEmiter) emitTypeMetas() error {
 	return nil
 }
 
-func (e *callInterfaceEmiter) emitBody() error {
+func (e *helperInterfaceEmiter) emitBody() error {
 	ometa := e.ometa
 	writer := e.writer
 	writer.WriteEmptyLine()
@@ -356,14 +362,18 @@ func (e *callInterfaceEmiter) emitBody() error {
 	return nil
 }
 
-func (e *callInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
+func (e *helperInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 	writer := e.writer
-	writer.WriteString(fmeta.Name, "(")
+	if e.kind == "listen" {
+		writer.WriteString("On", fmeta.Name, "(fun func(")
+	} else {
+		writer.WriteString(fmeta.Name, "(")
+	}
 	for i, p := range fmeta.Parameters {
 		if i != 0 {
 			writer.WriteString(", ")
 		}
-		writer.WriteString(p.Name, " ", e.replacePseudocodePart(p.Type))
+		writer.WriteString(p.Name, " ", e.replacePseudocodePart(e.toPackage, p.Type))
 	}
 	writer.WriteString(") ")
 	if len(fmeta.Results) > 0 {
@@ -376,258 +386,25 @@ func (e *callInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
 		if len(r.Name) > 0 {
 			writer.WriteString(r.Name, " ")
 		}
-		writer.WriteString(e.replacePseudocodePart(r.Type))
+		writer.WriteString(e.replacePseudocodePart(e.toPackage, r.Type))
 	}
 	if len(fmeta.Results) > 0 {
+		writer.WriteString(")")
+	}
+	if e.kind == "listen" {
 		writer.WriteString(")")
 	}
 	writer.WriteLine()
 	return nil
 }
 
-var regPseudocode = regexp.MustCompile(`\{\{.+?\}\}`)
-
-func (e *callInterfaceEmiter) replacePseudocodePart(content string) string {
-	return regPseudocode.ReplaceAllStringFunc(content, func(s string) string {
-		id := s[2 : len(s)-2]
-		tmeta := findTypeMetaForId(e.tmetas, id)
-		if tmeta.Import != nil {
-			return getImportMetaExport(tmeta.Import) + "." + tmeta.Name
-		} else {
-			if e.exportTo[tmeta] != e.toPackage {
-				return getImportPathExprot(e.exportTo[tmeta]) + "." + tmeta.Name
-			} else {
-				return tmeta.Name
-			}
-		}
+func (e *helperInterfaceEmiter) replacePseudocodePart(pkg string, content string) string {
+	return replacePseudocodePart(replacePseudocodePartInput{
+		content: content,
+		tmetas:  e.tmetas,
+		getExportTo: func(tmetaId string) string {
+			return e.exportTo[tmetaId]
+		},
+		currentPackage: pkg,
 	})
-}
-
-func EmitListenInterfaceFromHelper(root string, target string, ometa *meta.ObjectMeta) error {
-	module, err := getProjectModuleName(root)
-	if err != nil {
-		return err
-	}
-	emiter := &listenInterfaceEmiter{
-		root:   root,
-		target: target,
-		ometa:  ometa,
-		module: module,
-		writer: util.NewTextWriter(),
-	}
-	err = emiter.emit()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-type listenInterfaceEmiter struct {
-	root   string
-	target string
-	ometa  *meta.ObjectMeta
-	module string
-	writer util.TextWriter
-}
-
-func (e *listenInterfaceEmiter) emit() error {
-	err := e.emitHeader()
-	if err != nil {
-		return err
-	}
-	err = e.emitRaw()
-	if err != nil {
-		return err
-	}
-	err = e.emitBody()
-	if err != nil {
-		return err
-	}
-
-	outDir := path.Join(e.root, "internal", "srpc", "service", e.target)
-	err = ensureDirExist(outDir)
-	if err != nil {
-		return err
-	}
-	outPath := path.Join(e.root, "internal", "srpc", "service", e.target, toSnakeCase(e.ometa.Name)+".listen.go")
-	err = util.WriteGenerateFile(outPath, e.writer.Bytes(), e.root)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (e *listenInterfaceEmiter) emitHeader() error {
-	e.writer.WriteString(generatedHeader).WriteLine()
-	e.writer.WriteString("package ", e.target).WriteLine()
-	err := e.emitImports()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (e *listenInterfaceEmiter) emitImports() error {
-	// collect := newImportCollect()
-	// var fmetas []*meta.FieldMeta
-	// for _, f := range e.ometa.Functions {
-	// 	fmetas = append(fmetas, f.Parameters...)
-	// 	fmetas = append(fmetas, f.Results...)
-	// }
-	// for _, fmeta := range fmetas {
-	// 	for _, imp := range fmeta.Imports {
-	// 		if len(imp.Alias) != 0 {
-	// 			collect.Set(imp.Alias, imp.Path)
-	// 		} else {
-	// 			collect.Set(getImportMetaExport(imp), imp.Path)
-	// 		}
-	// 	}
-	// 	if len(fmeta.Raws) > 0 {
-	// 		fmeta.Type = strings.ReplaceAll(fmeta.Type, "{scope}.", "")
-	// 		// collect.Set(e.target, e.module+"/internal/srpc/model/"+e.target)
-	// 	}
-	// }
-	// e.writer.WriteEmptyLine()
-	// collect.Emit(e.writer)
-	return nil
-}
-
-func (e *listenInterfaceEmiter) emitRaw() error {
-	// var rmetas []*meta.CodeMeta
-	// var fmetas []*meta.FieldMeta
-	// for _, f := range e.ometa.Functions {
-	// 	fmetas = append(fmetas, f.Parameters...)
-	// 	fmetas = append(fmetas, f.Results...)
-	// }
-	// for _, fmeta := range fmetas {
-	// 	rmetas = append(rmetas, fmeta.Raws...)
-	// }
-	// serviceDir := path.Join(e.root, "internal", "srpc", "service", e.target)
-	// if !gfile.Exists(serviceDir) {
-	// 	err := os.MkdirAll(serviceDir, os.ModePerm)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
-	// modelPath := path.Join(serviceDir, "model.go")
-	// model, err := parse.ParseFileModel(modelPath)
-	// if err != nil {
-	// 	return err
-	// }
-	// for _, rmeta := range rmetas {
-	// 	model.AddType(rmeta.Name, []byte(rmeta.Code))
-	// }
-	// writer := util.NewTextWriter()
-	// writer.WriteString(generatedHeader).WriteLine()
-	// writer.WriteString("package ", e.target).WriteLine()
-	// for _, v := range model.Types {
-	// 	writer.WriteEmptyLine()
-	// 	writer.Write(v)
-	// 	writer.WriteLine()
-	// }
-	// err = util.WriteGenerateFile(modelPath, writer.Bytes(), e.root)
-	// if err != nil {
-	// 	return err
-	// }
-	return nil
-}
-
-func (e *listenInterfaceEmiter) emitBody() error {
-	ometa := e.ometa
-	writer := e.writer
-	writer.WriteEmptyLine()
-	writer.WriteString("type I", ometa.Name, " interface {").WriteLine().IncreaseIndent()
-	for _, fmeta := range ometa.Functions {
-		err := e.emitFunction(fmeta)
-		if err != nil {
-			return err
-		}
-	}
-	writer.DecreaseIndent().WriteString("}").WriteLine()
-
-	// var localMath IMath
-	// func Math() IMath {
-	// 	if localSort == nil {
-	// 		panic("implement not found for interface IMath, forgot register?")
-	// 	}
-	// 	return localMath
-	// }
-	// func RegisterMath(i IMath) {
-	// 	localMath = i
-	// }
-	writer.WriteEmptyLine()
-	writer.WriteString("var local", e.ometa.Name, " I", e.ometa.Name).WriteLine()
-	writer.WriteEmptyLine()
-	writer.WriteString("func ", e.ometa.Name, "() I", e.ometa.Name, "{").WriteLine().IncreaseIndent()
-	writer.WriteString("if local", e.ometa.Name, " == nil {").WriteLine().IncreaseIndent()
-	writer.WriteString(`panic("implement not found for interface I`, e.ometa.Name, `, forgot register?")`).WriteLine()
-	writer.DecreaseIndent().WriteString("}").WriteLine()
-	writer.WriteString("return local", e.ometa.Name).WriteLine()
-	writer.DecreaseIndent().WriteString("}").WriteLine()
-	writer.WriteEmptyLine()
-	writer.WriteString("func Register", e.ometa.Name, "(i I", e.ometa.Name, ") {").WriteLine().IncreaseIndent()
-	writer.WriteString("local", e.ometa.Name, " = i").WriteLine()
-	writer.DecreaseIndent().WriteString("}").WriteLine()
-	return nil
-}
-
-func (e *listenInterfaceEmiter) emitFunction(fmeta *meta.FunctionMeta) error {
-	writer := e.writer
-	writer.WriteString("On", fmeta.Name, "(fun func(")
-	for i, p := range fmeta.Parameters {
-		if i != 0 {
-			writer.WriteString(", ")
-		}
-		writer.WriteString(p.Name, " ", p.Type)
-	}
-	writer.WriteString(") ")
-	if len(fmeta.Results) > 0 {
-		writer.WriteString("(")
-	}
-	for i, r := range fmeta.Results {
-		if i != 0 {
-			writer.WriteString(", ")
-		}
-		if len(r.Name) > 0 {
-			writer.WriteString(r.Name, " ")
-		}
-		writer.WriteString(r.Type)
-	}
-	if len(fmeta.Results) > 0 {
-		writer.WriteString(")")
-	}
-	writer.WriteString(")")
-	writer.WriteLine()
-	return nil
-}
-
-func emitModel(model *parse.Model, out string, root string) error {
-	writer := util.NewTextWriter()
-	writer.WriteString(generatedHeader).WriteLine()
-	writer.WriteString("package ", getPackageNameForFileName(out)).WriteLine()
-	if len(model.GetImports()) > 0 {
-		writer.WriteEmptyLine()
-	}
-	for name, path := range model.GetImports() {
-		if util.StringEndOf(path, name) {
-			writer.WriteString(`import "` + path + `"`)
-		} else {
-			writer.WriteString("import " + name + ` "` + path + `"`)
-		}
-		writer.WriteLine()
-	}
-	for _, v := range model.GetTypes() {
-		writer.WriteEmptyLine()
-		writer.Write(v.Content)
-		writer.WriteLine()
-	}
-	err := util.WriteGenerateFile(out, writer.Bytes(), root)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func getPackageNameForFileName(filename string) string {
-	return path.Base(path.Dir(filename))
 }

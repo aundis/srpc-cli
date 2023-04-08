@@ -1,6 +1,7 @@
 package emit
 
 import (
+	"fmt"
 	"path"
 	"sr/parse"
 	"sr/util"
@@ -14,9 +15,10 @@ func EmitSignal(root string) error {
 		return err
 	}
 	emiter := signalEmiter{
-		root:   root,
-		module: module,
-		writer: util.NewTextWriter(),
+		root:     root,
+		module:   module,
+		exportTo: fmt.Sprintf("%s/internal/srpc/emit", module),
+		writer:   util.NewTextWriter(),
 	}
 	err = emiter.emit()
 	if err != nil {
@@ -42,9 +44,10 @@ func EmitSignal(root string) error {
 }
 
 type signalEmiter struct {
-	root   string
-	module string
-	writer util.TextWriter
+	root     string
+	module   string
+	exportTo string
+	writer   util.TextWriter
 }
 
 func (e *signalEmiter) emit() error {
@@ -99,7 +102,7 @@ func (e *signalEmiter) emit() error {
 	collect.Set("service", e.module+"/internal/service")
 	collect.Set("manager", e.module+"/internal/srpc/manager")
 	for _, it := range interfaceTypes {
-		err = resolveInterfaceImports(it, collect, e.root)
+		err = resolveInterfaceImports(it, collect, e.exportTo, e.module, e.root)
 		if err != nil {
 			return err
 		}

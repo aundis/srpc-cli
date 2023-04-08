@@ -1,9 +1,9 @@
 package emit
 
 import (
+	"fmt"
 	"go/ast"
 	"path"
-	"regexp"
 	"sr/parse"
 	"sr/util"
 	"strconv"
@@ -109,21 +109,23 @@ func emitListenDir(root, module string, dir string) error {
 
 func emitListenStruct(root, module, target string, it *parse.InterfaceType) error {
 	e := &listenStructEmiter{
-		writer: util.NewTextWriter(),
-		root:   root,
-		module: module,
-		target: target,
-		it:     it,
+		writer:   util.NewTextWriter(),
+		root:     root,
+		module:   module,
+		target:   target,
+		exportTo: fmt.Sprintf("%s/internal/srpc/service/%s/listen", module, target),
+		it:       it,
 	}
 	return e.emit()
 }
 
 type listenStructEmiter struct {
-	root   string
-	module string
-	target string
-	it     *parse.InterfaceType
-	writer util.TextWriter
+	root     string
+	module   string
+	target   string
+	exportTo string
+	it       *parse.InterfaceType
+	writer   util.TextWriter
 }
 
 func (e *listenStructEmiter) emit() error {
@@ -169,7 +171,7 @@ func (e *listenStructEmiter) emitImports() error {
 	collect.Set("manager", e.module+"/internal/srpc/manager")
 	collect.Set("garray", "github.com/gogf/gf/v2/container/garray")
 	collect.Set(e.target, e.module+"/internal/srpc/service/"+e.target)
-	err := resolveInterfaceImports(e.it, collect, e.root)
+	err := resolveInterfaceImports(e.it, collect, e.exportTo, e.module, e.root)
 	if err != nil {
 		return err
 	}
@@ -178,6 +180,7 @@ func (e *listenStructEmiter) emitImports() error {
 }
 
 func (e *listenStructEmiter) emitBody() error {
+	fResolver := newFieldResolver(e.root, e.module, e.exportTo)
 	// 检查函数签名是否合法
 	var paramAndResultArr []paramAndResult
 	for _, fun := range e.it.Functions {
@@ -190,8 +193,9 @@ func (e *listenStructEmiter) emitBody() error {
 		if !parse.IsFuncType(fun.Params[0].TypeRaw) {
 			return formatError(e.it.Parent.FileSet, fun.Params[0].Pos, "listen interface function first params type must be function type", e.root)
 		}
-		funcType := fun.Params[0].TypeRaw.(*ast.FuncType)
-		params, results := parse.ParseFuncType(e.it.Parent.Content, funcType)
+		firstParam := fun.Params[0]
+		funcType := firstParam.TypeRaw.(*ast.FuncType)
+		params, results := parse.ParseFuncType(e.it.Parent.Content, funcType, firstParam.Parent)
 		if len(params) == 0 {
 			return formatError(e.it.Parent.FileSet, funcType.Pos(), "the function type has at least one parameter", e.root)
 		}
@@ -203,6 +207,16 @@ func (e *listenStructEmiter) emitBody() error {
 		}
 		if results[0].Type != "error" {
 			return formatError(e.it.Parent.FileSet, results[0].Pos, "the function type first return type must be error", e.root)
+		}
+		// 替换params,results的类型
+		var fields []*parse.Field
+		fields = append(fields, params...)
+		fields = append(fields, results...)
+		for _, v := range fields {
+			err := fResolver.resolve(v)
+			if err != nil {
+				return err
+			}
 		}
 		paramAndResultArr = append(paramAndResultArr, paramAndResult{
 			params:  params,
@@ -273,7 +287,7 @@ func (e *listenStructEmiter) emitBody() error {
 			}
 			// P1 int `json:"p1"`
 			name := "P" + strconv.Itoa(i)
-			writer.WriteString(name, " ", e.formatType(param.Type), " `json:\"", firstLower(name), "\"`").WriteLine()
+			writer.WriteString(name, " ", fResolver.getResolvedType(param), " `json:\"", firstLower(name), "\"`").WriteLine()
 		}
 		writer.DecreaseIndent().WriteString("}").WriteLine()
 	}
@@ -303,7 +317,7 @@ func (e *listenStructEmiter) emitBody() error {
 			if i > 0 {
 				writer.WriteString(", ")
 			}
-			writer.WriteString(p.Name, " ", e.formatType(p.Type))
+			writer.WriteString(p.Name, " ", fResolver.getResolvedType(p))
 		}
 		writer.WriteString(") error) {").WriteLine().IncreaseIndent()
 		writer.WriteString(arrayName, ".Append(fun)").WriteLine()
@@ -320,7 +334,7 @@ func (e *listenStructEmiter) emitBody() error {
 			if i > 0 {
 				writer.WriteString(", ")
 			}
-			writer.WriteString(p.Name, " ", e.formatType(p.Type))
+			writer.WriteString(p.Name, " ", fResolver.getResolvedType(p))
 		}
 		writer.WriteString(") (err error) {").WriteLine().IncreaseIndent()
 		writer.WriteString("if ", arrayName, ".Len() == 0 {").WriteLine().IncreaseIndent()
@@ -336,7 +350,7 @@ func (e *listenStructEmiter) emitBody() error {
 			if i > 0 {
 				writer.WriteString(", ")
 			}
-			writer.WriteString(e.formatType(p.Type))
+			writer.WriteString(fResolver.getResolvedType(p))
 		}
 		writer.WriteString(") error)").WriteLine()
 		// err = fun(ctx, apple1)
@@ -372,12 +386,12 @@ func (e *listenStructEmiter) emitBody() error {
 	return nil
 }
 
-func (e *listenStructEmiter) formatType(tpe string) string {
-	reg := regexp.MustCompile(`\b(\.?[A-Z]\w*\.?)\b`)
-	return reg.ReplaceAllStringFunc(tpe, func(s string) string {
-		if s[0] != '.' && s[len(s)-1] != '.' {
-			return e.target + "." + s
-		}
-		return s
-	})
-}
+// func (e *listenStructEmiter) formatType(tpe string) string {
+// 	reg := regexp.MustCompile(`\b(\.?[A-Z]\w*\.?)\b`)
+// 	return reg.ReplaceAllStringFunc(tpe, func(s string) string {
+// 		if s[0] != '.' && s[len(s)-1] != '.' {
+// 			return e.target + "." + s
+// 		}
+// 		return s
+// 	})
+// }

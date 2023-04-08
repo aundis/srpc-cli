@@ -47,8 +47,15 @@ func IsFuncType(v interface{}) bool {
 	return false
 }
 
-func ParseFuncType(content []byte, v interface{}) (params []*Field, results []*Field) {
-	return parseFunctionParamAndResult(content, v.(*ast.FuncType))
+func ParseFuncType(content []byte, v interface{}, file *File) (params []*Field, results []*Field) {
+	params, results = parseFunctionParamAndResult(content, v.(*ast.FuncType))
+	for _, v := range params {
+		v.Parent = file
+	}
+	for _, v := range results {
+		v.Parent = file
+	}
+	return
 }
 
 func IsStructType(v interface{}) bool {

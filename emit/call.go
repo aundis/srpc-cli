@@ -1,11 +1,13 @@
 package emit
 
 import (
+	"fmt"
 	"path"
-	"regexp"
 	"sr/parse"
 	"sr/util"
 	"strconv"
+
+	"github.com/aundis/meta"
 )
 
 func EmitCall(root string) error {
@@ -116,17 +118,25 @@ func emitCallStruct(root, module, target string, it *parse.InterfaceType) error 
 		root:   root,
 		module: module,
 		target: target,
-		it:     it,
+		resolver: &typeResolver{
+			module:   module,
+			root:     root,
+			resolved: map[string]*meta.TypeMeta{},
+		},
+		exportTo: fmt.Sprintf("%s/internal/srpc/service/%s/call", module, target),
+		it:       it,
 	}
 	return e.emit()
 }
 
 type callStructEmiter struct {
-	root   string
-	module string
-	target string
-	it     *parse.InterfaceType
-	writer util.TextWriter
+	root     string
+	module   string
+	target   string
+	exportTo string
+	resolver *typeResolver
+	it       *parse.InterfaceType
+	writer   util.TextWriter
 }
 
 func (e *callStructEmiter) emit() error {
@@ -170,7 +180,7 @@ func (e *callStructEmiter) emitImports() error {
 	collect.Set("srpc", "github.com/aundis/srpc")
 	collect.Set("service", e.module+"/internal/service")
 	collect.Set(e.target, e.module+"/internal/srpc/service/"+e.target)
-	err := resolveInterfaceImports(e.it, collect, e.root)
+	err := resolveInterfaceImports(e.it, collect, e.exportTo, e.module, e.root)
 	if err != nil {
 		return err
 	}
@@ -181,6 +191,15 @@ func (e *callStructEmiter) emitImports() error {
 func (e *callStructEmiter) emitBody() error {
 	it := e.it
 	writer := e.writer
+	// 解析重定向所有的Field
+	fResolver := newFieldResolver(e.root, e.module, e.exportTo)
+	fields := getInterfaceFields(it)
+	for _, v := range fields {
+		err := fResolver.resolve(v)
+		if err != nil {
+			return err
+		}
+	}
 	// 注册
 	writer.WriteEmptyLine()
 	writer.WriteString("func init() {").WriteLine().IncreaseIndent()
@@ -205,7 +224,7 @@ func (e *callStructEmiter) emitBody() error {
 					continue
 				}
 				name := "r" + strconv.Itoa(i+1)
-				writer.WriteString(firstUpper(name), " ", r.Type, " `json:\"", name, "\"`").WriteLine()
+				writer.WriteString(firstUpper(name), " ", fResolver.getResolvedType(r), " `json:\"", name, "\"`").WriteLine()
 			}
 			writer.DecreaseIndent().WriteString("}").WriteLine()
 		}
@@ -233,7 +252,7 @@ func (e *callStructEmiter) emitBody() error {
 				name := "p" + strconv.Itoa(i)
 				writer.WriteString(name)
 			}
-			writer.WriteString(" ", e.formatType(p.Type))
+			writer.WriteString(" ", fResolver.getResolvedType(p))
 		}
 		writer.WriteString(")")
 		// 写返回值
@@ -257,7 +276,7 @@ func (e *callStructEmiter) emitBody() error {
 			} else {
 				writer.WriteString("r" + strconv.Itoa(i+1))
 			}
-			writer.WriteString(" ", e.formatType(r.Type))
+			writer.WriteString(" ", fResolver.getResolvedType(r))
 		}
 		writer.WriteString(")", " {").WriteLine().IncreaseIndent()
 		// 方法体内容
@@ -331,12 +350,12 @@ func (e *callStructEmiter) emitBody() error {
 	return nil
 }
 
-func (e *callStructEmiter) formatType(tpe string) string {
-	reg := regexp.MustCompile(`\b(\.?[A-Z]\w*\.?)\b`)
-	return reg.ReplaceAllStringFunc(tpe, func(s string) string {
-		if s[0] != '.' && s[len(s)-1] != '.' {
-			return e.target + "." + s
-		}
-		return s
-	})
-}
+// func (e *callStructEmiter) formatType(tpe string) string {
+// 	reg := regexp.MustCompile(`\b(\.?[A-Z]\w*\.?)\b`)
+// 	return reg.ReplaceAllStringFunc(tpe, func(s string) string {
+// 		if s[0] != '.' && s[len(s)-1] != '.' {
+// 			return e.target + "." + s
+// 		}
+// 		return s
+// 	})
+// }

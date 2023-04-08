@@ -61,7 +61,8 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 		}
 		if len(list) > 0 {
 			for _, v := range list {
-				err = emit.EmitCallInterfaceFromHelper(dir, target, &v)
+				fmt.Printf("emit %s@%s", target, v.Name)
+				err = emit.EmitInterfaceFromHelper(dir, target, &v, "call")
 				if err != nil {
 					return err
 				}
@@ -89,7 +90,8 @@ func (g *Get) Run(ctx context.Context, args ...string) error {
 			return fmt.Errorf("match object to more")
 		}
 		ometa := list[0]
-		err = emit.EmitListenInterfaceFromHelper(dir, target, &ometa)
+		fmt.Printf("emit %s@%s", target, ometa.Name)
+		err = emit.EmitInterfaceFromHelper(dir, target, &ometa, "listen")
 		if err != nil {
 			return err
 		}

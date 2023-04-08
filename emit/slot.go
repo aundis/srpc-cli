@@ -16,9 +16,10 @@ func EmitSlot(root string) error {
 		return err
 	}
 	e := &slotEmiter{
-		root:   root,
-		module: module,
-		outDir: path.Join(root, "internal", "srpc", "slot"),
+		root:     root,
+		module:   module,
+		exportTo: fmt.Sprintf("%s/internal/srpc/slot", module),
+		outDir:   path.Join(root, "internal", "srpc", "slot"),
 	}
 	err = e.emit()
 	if err != nil {
@@ -31,6 +32,7 @@ type slotEmiter struct {
 	root          string
 	module        string
 	outDir        string
+	exportTo      string
 	targetStructs []*parse.StructType
 }
 
@@ -72,38 +74,6 @@ func (e *slotEmiter) emit() error {
 	if err != nil {
 		return err
 	}
-
-	// 生成 slot.go
-	// writer := newTextWriter()
-	// writer.WriteString(generatedHeader).WriteLine()
-	// writer.WriteString("package slot").WriteLine()
-	// writer.WriteEmptyLine()
-	// writer.WriteString("import \"github.com/aundis/srpc\"").WriteLine()
-	// writer.WriteString("import \"github.com/aundis/meta\"").WriteLine()
-	// writer.WriteEmptyLine()
-	// writer.WriteString(mergeMapsFunc).WriteLine()
-	// // 合并所有的controller
-	// writer.WriteString("var Controllers = mergeMaps(").WriteLine().IncreaseIndent()
-	// for _, st := range e.targetStructs {
-	// 	name := firstLower(st.Name[1:])
-	// 	writer.WriteString(name+"Controller", ",").WriteLine()
-	// }
-	// writer.DecreaseIndent().WriteString(")").WriteLine()
-	// // 合并所有的helper
-	// writer.WriteEmptyLine()
-	// writer.WriteString("var Helpers = []meta.ObjectMeta{").WriteLine().IncreaseIndent()
-	// for _, st := range e.targetStructs {
-	// 	if !isSlotStruct(st) {
-	// 		continue
-	// 	}
-	// 	name := firstLower(st.Name[1:])
-	// 	writer.WriteString(name+"Helper", ",").WriteLine()
-	// }
-	// writer.DecreaseIndent().WriteString("}").WriteLine()
-	// err = ioutil.WriteFile(path.Join(e.root, "internal", "srpc", "slot", "slot.go"), writer.Bytes(), fs.ModePerm)
-	// if err != nil {
-	// 	return err
-	// }
 	return nil
 }
 
@@ -158,7 +128,7 @@ func (e *slotEmiter) emitSlotDir(dir string) error {
 		if structNeedImportJson(st) {
 			collect.Set("json", "encoding/json")
 		}
-		err = resolveStructImports(st, collect, e.root)
+		err = resolveStructImports(st, collect, e.exportTo, e.module, e.root)
 		if err != nil {
 			return err
 		}
@@ -212,6 +182,13 @@ func (e *slotEmiter) filterNoExport(list []*parse.Function) []*parse.Function {
 }
 
 func (e *slotEmiter) emitStruct(writer util.TextWriter, st *parse.StructType) error {
+	fResolver := newFieldResolver(e.root, e.module, e.exportTo)
+	for _, v := range getStructFields(st) {
+		err := fResolver.resolve(v)
+		if err != nil {
+			return err
+		}
+	}
 	// 生成结构方法的参数结构体
 	for _, f := range st.Functions {
 		// 请求结构体
@@ -229,7 +206,7 @@ func (e *slotEmiter) emitStruct(writer util.TextWriter, st *parse.StructType) er
 				}
 				fieldName := "p" + strconv.Itoa(i)
 				// Name string `json:"name"`
-				writer.WriteString(firstUpper(fieldName), " ", strings.ReplaceAll(p.Type, "...", "[]"), " `json:\"", fieldName, "\"`").WriteLine()
+				writer.WriteString(firstUpper(fieldName), " ", strings.ReplaceAll(fResolver.getResolvedType(p), "...", "[]"), " `json:\"", fieldName, "\"`").WriteLine()
 			}
 			writer.DecreaseIndent().WriteString("}").WriteLine()
 		}
@@ -286,7 +263,7 @@ func (e *slotEmiter) emitStruct(writer util.TextWriter, st *parse.StructType) er
 				paramIndex++
 				writer.WriteString("params." + fieldName)
 				// 支持省略参数
-				if strings.Contains(v.Type, "...") {
+				if strings.Contains(fResolver.getResolvedType(v), "...") {
 					writer.WriteString("...")
 				}
 			}

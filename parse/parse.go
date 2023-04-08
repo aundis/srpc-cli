@@ -60,19 +60,32 @@ func ParseContent(filename string, content []byte) (*File, error) {
 		}
 	}
 	// 服务于错误提示
-	for _, f := range res.Functions {
-		f.Parent = res
+	setFileAstParent(res)
+	return res, nil
+}
+
+func setFileAstParent(file *File) {
+	var fields []*Field
+	for _, f := range file.Functions {
+		f.Parent = file
+		fields = append(fields, f.Params...)
+		fields = append(fields, f.Results...)
 	}
-	for _, s := range res.StructTypes {
-		s.Parent = res
+	for _, s := range file.StructTypes {
+		s.Parent = file
+		fields = append(fields, s.Fields...)
 	}
-	for _, i := range res.InterfaceTypes {
-		i.Parent = res
+	for _, i := range file.InterfaceTypes {
+		i.Parent = file
 		for _, f := range i.Functions {
-			f.Parent = res
+			f.Parent = file
+			fields = append(fields, f.Params...)
+			fields = append(fields, f.Results...)
 		}
 	}
-	return res, nil
+	for _, field := range fields {
+		field.Parent = file
+	}
 }
 
 func parseStructType(content []byte, spec *ast.TypeSpec) *StructType {

@@ -123,3 +123,177 @@ func (r *typeResolver) getTypeMetas() []*meta.TypeMeta {
 	}
 	return result
 }
+
+func newFieldResolver(root, module, exportTo string) *fieldResolver {
+	return &fieldResolver{
+		module:   module,
+		root:     root,
+		exportTo: exportTo,
+		tResolver: &typeResolver{
+			module:   module,
+			root:     root,
+			resolved: map[string]*meta.TypeMeta{},
+		},
+		resolved: make(map[*parse.Field]string),
+	}
+}
+
+type fieldResolver struct {
+	module    string
+	root      string
+	exportTo  string
+	tResolver *typeResolver
+	resolved  map[*parse.Field]string
+}
+
+func (r *fieldResolver) resolve(field *parse.Field) error {
+	if !hasCustomerType(field.Type) {
+		r.resolved[field] = field.Type
+		return nil
+	}
+	tResolver := r.tResolver
+	template, err := tResolver.resolve(field.Parent, field.Type, field.Pos)
+	if err != nil {
+		return err
+	}
+	tmetas := tResolver.getTypeMetas()
+	real, err := replacePseudocodePart(replacePseudocodePartInput{
+		content: template,
+		tmetas:  tResolver.getTypeMetas(),
+		getExportTo: func(tmetaId string) string {
+			return findTypeMetaForId(tmetas, tmetaId).From
+		},
+		currentPackage: r.exportTo,
+	}), nil
+	r.resolved[field] = real
+	return nil
+}
+
+func (r *fieldResolver) getResolvedType(field *parse.Field) string {
+	return r.resolved[field]
+}
+
+// func redirectTypeReference(fields []*parse.Field, exportTo, module, root string) error {
+// 	resolver := &typeResolver{
+// 		module:   module,
+// 		root:     root,
+// 		resolved: map[string]*meta.TypeMeta{},
+// 	}
+// 	for _, field := range fields {
+// 		if !hasCustomerType(field.Type) {
+// 			continue
+// 		}
+// 		template, err := resolver.resolve(field.Parent, field.Type, field.Pos)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		tmetas := resolver.getTypeMetas()
+// 		field.Type = replacePseudocodePart(replacePseudocodePartInput{
+// 			content: template,
+// 			tmetas:  resolver.getTypeMetas(),
+// 			getExportTo: func(tmetaId string) string {
+// 				return findTypeMetaForId(tmetas, tmetaId).From
+// 			},
+// 			currentPackage: exportTo,
+// 		})
+// 	}
+// 	return nil
+// }
+
+type replacePseudocodePartInput struct {
+	content        string
+	tmetas         []*meta.TypeMeta
+	getExportTo    func(string) string
+	currentPackage string
+}
+
+var regPseudocode = regexp.MustCompile(`\{\{.+?\}\}`)
+
+func replacePseudocodePart(in replacePseudocodePartInput) string {
+	return regPseudocode.ReplaceAllStringFunc(in.content, func(s string) string {
+		id := s[2 : len(s)-2]
+		tmeta := findTypeMetaForId(in.tmetas, id)
+		if tmeta.Import != nil {
+			return getImportMetaExport(tmeta.Import) + "." + tmeta.Name
+		} else {
+			if in.getExportTo(tmeta.Id) != in.currentPackage {
+				return getImportPathExport(in.getExportTo(tmeta.Id)) + "." + tmeta.Name
+			} else {
+				return tmeta.Name
+			}
+		}
+	})
+}
+
+func hasCustomerType(in string) bool {
+	arr := getTypeNames(in)
+	for _, v := range arr {
+		if !isBuiltin(v) {
+			return true
+		}
+	}
+	return false
+}
+
+func isBuiltin(in string) bool {
+	builtin := []string{
+		"int",
+		"int8",
+		"int16",
+		"int32",
+		"int64",
+		"uint",
+		"uint8",
+		"uint16",
+		"uint32",
+		"uint64",
+		"bool",
+		"interface",
+		"any",
+		"map",
+		"byte",
+		"rune",
+		"string",
+	}
+	for _, v := range builtin {
+		if v == in {
+			return true
+		}
+	}
+	return false
+}
+
+func getTypeNames(compound string) []string {
+	var results []string
+	reg := regexp.MustCompile(`\b([\w\.]+)\b`)
+	matchs := reg.FindAllStringSubmatch(compound, -1)
+	for _, v := range matchs {
+		tar := v[1]
+		if strings.Contains(tar, ".") {
+			results = append(results, tar)
+		} else if tar[0] >= 'A' && tar[0] <= 'Z' {
+			results = append(results, tar)
+		}
+	}
+	return results
+}
+
+func findTypeMetaForId(arr []*meta.TypeMeta, id string) *meta.TypeMeta {
+	for _, v := range arr {
+		if v.Id == id {
+			return v
+		}
+	}
+	return nil
+}
+
+var typeMetaIdReg = regexp.MustCompile(`\{\{(.+?)\}\}`)
+
+func findAllTypeMetaIds(content string) []string {
+	var result []string
+	matchs := typeMetaIdReg.FindAllStringSubmatch(content, -1)
+	for _, v := range matchs {
+		result = append(result, v[1])
+	}
+	return result
+}

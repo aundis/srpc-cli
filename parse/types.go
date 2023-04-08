@@ -55,6 +55,7 @@ type Function struct {
 }
 
 type Field struct {
+	Parent  *File
 	Pos     token.Pos
 	Name    string
 	Type    string
